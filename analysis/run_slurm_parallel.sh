@@ -1,8 +1,8 @@
 #!/bin/bash
 # Run permutation_analysis.py in parallel using srun.
 # Usage example:
-#   bash run_slurm_parallel.sh --statistical_method gene-permutation --device gpu \
-#       --start 1 --end 100 --parallel 10 --beta 2 --gamma 2
+
+#   bash run_slurm_parallel.sh --statistical_method gene-permutation --device gpu --start 1 --end 100 --parallel 10
 
 set -e
 

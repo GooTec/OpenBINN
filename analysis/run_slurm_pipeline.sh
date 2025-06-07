@@ -5,6 +5,8 @@
 
 set -e
 
+BETA=0
+GAMMA=0.0
 STAT_METHOD="gene-permutation"
 DEVICE="gpu"
 START=1
