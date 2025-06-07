@@ -1,5 +1,20 @@
 #!/bin/bash
+# Download prostate dataset from Zenodo and extract under ../data/prostate
+set -e
 
-wget -O data/prostate/P1000_final_analysis_set_cross_important_only.csv --no-check-certificate -r 'https://drive.google.com/uc?export=download&id=1EqQ-_34Q404E0CZfbztz7l8dhqE3zmOI'
-wget -O data/prostate/P1000_data_CNA_paper.csv --no-check-certificate -r 'https://drive.google.com/uc?export=download&id=1D5v7ORm1qLeAPc5IaqzagYQJsccpAbcZ'
-wget -P data/prostate https://s3-us-west-2.amazonaws.com/humanbase/networks/prostate_gland.gz
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DATA_DIR="${SCRIPT_DIR}/../data"
+ZIP_PATH="${DATA_DIR}/prostate.zip"
+URL="https://zenodo.org/records/15614376/files/prostate.zip?download=1&preview=1"
+
+mkdir -p "$DATA_DIR"
+
+if [ ! -d "$DATA_DIR/prostate" ]; then
+  echo "Downloading prostate dataset..."
+  wget -O "$ZIP_PATH" "$URL"
+  echo "Extracting..."
+  unzip -o "$ZIP_PATH" -d "$DATA_DIR"
+  rm "$ZIP_PATH"
+else
+  echo "Dataset already exists at $DATA_DIR/prostate"
+fi

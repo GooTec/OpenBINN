@@ -55,7 +55,8 @@ python setup.py develop
 
 ## Quick Start
 
-1. **Prepare data** by placing your multi-omics files under `data/`.
+1. **Prepare data** by running `bash pull_data.sh`. This downloads the prostate
+   dataset into `../data/prostate/` relative to the repository.
 2. **Edit** an experiment config in `configs/`, specifying model type, dataset paths, and analysis options.
 3. **Run** training and evaluation:
 

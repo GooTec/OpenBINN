@@ -27,7 +27,9 @@ import openxai.experiment_utils as utils
 METHOD        = "deeplift"   # ← ig, lime, shap 등으로 변경 가능
 N_SIM         = 100
 N_VARIANTS    = 100
-DATA_ROOT     = Path("./data/b0_g0.0")
+DEFAULT_BETA  = 2
+DEFAULT_GAMMA = 2
+DATA_ROOT     = Path(f"./data/b{DEFAULT_BETA}_g{DEFAULT_GAMMA}")
 NUM_WORKERS   = 0
 SEED          = 42
 # ──────────────────────────────────────────
@@ -178,13 +180,22 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--start_sim", type=int, default=1)
     ap.add_argument("--end_sim",   type=int, default=N_SIM)
+    ap.add_argument("--beta", type=float, default=DEFAULT_BETA)
+    ap.add_argument("--gamma", type=float, default=DEFAULT_GAMMA)
     ap.add_argument(
         "--statistical_method",
         choices=["bootstrap", "gene-permutation", "label-permutation", "all"],
         default="all",
         help="Variant type to process when computing importances.",
     )
+    ap.add_argument(
+        "--skip_original",
+        action="store_true",
+        help="Do not calculate importances for original datasets",
+    )
     args = ap.parse_args()
+
+    data_root = Path(f"./data/b{args.beta}_g{args.gamma}")
 
     reactome = load_reactome_once()
 
@@ -194,9 +205,10 @@ def main():
         variants = [args.statistical_method]
 
     for i in range(args.start_sim, args.end_sim + 1):
-        base = DATA_ROOT / f"{i}"
+        base = data_root / f"{i}"
         print(f"\n■■ Simulation {i:3d} ■■")
-        explain_dataset(base, reactome)  # original
+        if not args.skip_original:
+            explain_dataset(base, reactome)  # original
 
         for vtype in variants:
             for b in range(1, N_VARIANTS + 1):

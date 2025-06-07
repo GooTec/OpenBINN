@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""
-train_all_variants_fast.py
-──────────────────────────
-• b4_g4 시뮬레이션(1‒100)  →  원본 데이터에 대해 한 번 Grid-Search
-  → best (lr*, bs*) 도출  → 그 값으로 변형 300 세트 학습.
+"""train_variants.py
+Train variant simulation datasets using the best hyperparameters
+obtained from training the original datasets (see ``train_original.py``).
+The dataset location is determined by ``--beta`` and ``--gamma``
+arguments (e.g. ``data/b2_g1.5``).
 """
 
 import os
@@ -37,7 +37,9 @@ MAX_EPOCHS  = 200
 PATIENCE    = 10
 N_SIM       = 100
 N_VARIANTS  = 100
-DATA_ROOT   = Path("./data/b0_g0.0")
+DEFAULT_BETA  = 2
+DEFAULT_GAMMA = 2
+DATA_ROOT   = Path(f"./data/b{DEFAULT_BETA}_g{DEFAULT_GAMMA}")
 NUM_WORKERS = 0
 # ───────────────────────────────────
 
@@ -204,6 +206,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--start_sim", type=int, default=1)
     ap.add_argument("--end_sim",   type=int, default=N_SIM)
+    ap.add_argument("--beta", type=float, default=DEFAULT_BETA)
+    ap.add_argument("--gamma", type=float, default=DEFAULT_GAMMA)
     ap.add_argument(
         "--statistical_method",
         choices=["bootstrap", "gene-permutation", "label-permutation", "all"],
@@ -211,6 +215,8 @@ def main():
         help="Variant type to train. Use 'all' to run every variant.",
     )
     args = ap.parse_args()
+
+    data_root = Path(f"./data/b{args.beta}_g{args.gamma}")
 
     reactome = load_reactome_once()
 
@@ -220,11 +226,14 @@ def main():
         variants = [args.statistical_method]
 
     for i in range(args.start_sim, args.end_sim + 1):
-        base_dir = DATA_ROOT / f"{i}"
+        base_dir = data_root / f"{i}"
         print(f"\n■■ Simulation {i:3d} ■■")
 
-        # ① original → grid search
-        best_params = train_dataset(base_dir, reactome, best_params=None)
+        metrics_fp = base_dir / "results" / "optimal" / "metrics.csv"
+        best_params = load_best_params(metrics_fp)
+        if best_params is None:
+            print(f"[WARN] metrics not found: {metrics_fp}")
+            continue
 
         # ② variants → 고정 best_params
         for vtype in variants:

@@ -6,8 +6,11 @@ compute_geneperm_pvalues.py
 • 원본 vs gene-permutation 100개로 null-distribution 작성
 • p-values (P[ null ≥ observed ]) 계산
 • 그림 + CSV 저장
-      results/gene_permutation/sim_{i}_distributions.png
-      results/gene_permutation/sim_{i}_pvalues.csv
+  results/gene_permutation/sim_{i}_distributions.png
+  results/gene_permutation/sim_{i}_pvalues.csv
+
+Simulation data are read from ``data/b{beta}_g{gamma}`` controlled by
+``--beta`` and ``--gamma``.
 """
 
 from pathlib import Path
@@ -20,8 +23,10 @@ import seaborn as sns
 # ───────── 사용자 설정 ─────────
 METHOD        = "deeplift"
 N_VARIANTS    = 100
-DATA_ROOT     = Path("./data/b0_g0.0")
-OUT_DIR       = Path("./results/b0_g0.0/gene_permutation")
+DEFAULT_BETA  = 2
+DEFAULT_GAMMA = 2
+DATA_ROOT     = Path(f"./data/b{DEFAULT_BETA}_g{DEFAULT_GAMMA}")
+OUT_DIR       = Path(f"./results/b{DEFAULT_BETA}_g{DEFAULT_GAMMA}/gene_permutation")
 sns.set(style="whitegrid")
 # ──────────────────────────────
 
@@ -98,7 +103,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--start_sim", type=int, default=1)
     ap.add_argument("--end_sim",   type=int, default=100)
+    ap.add_argument("--beta", type=float, default=DEFAULT_BETA)
+    ap.add_argument("--gamma", type=float, default=DEFAULT_GAMMA)
     args = ap.parse_args()
+
+    global DATA_ROOT, OUT_DIR
+    DATA_ROOT = Path(f"./data/b{args.beta}_g{args.gamma}")
+    OUT_DIR = Path(f"./results/b{args.beta}_g{args.gamma}/gene_permutation")
 
     for i in range(args.start_sim, args.end_sim + 1):
         process_sim(i)
