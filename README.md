@@ -29,9 +29,9 @@ OpenBINN provides a unified folder structure and tools to train, interpret, and 
 
 ```
 openbinn/
+├── openbinn/              # OpenBINN Module including explainer and BINN model
 ├── data/                  # Raw and processed omics datasets
-├── models/                # BINN architectures and pretrained weights
-├── experiments/           # Experiment configurations and results
+├── biological_knowledge/  # files for implementing models with biological knowledge (e.g, Reactome, KEGG, etc.)
 ├── analysis/              # Interpretation scripts and statistical tests
 ├── notebooks/             # Jupyter notebooks for demos and tutorials
 ├── scripts/               # Utilities (data preprocessing, evaluation)
