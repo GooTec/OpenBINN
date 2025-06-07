@@ -178,18 +178,29 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--start_sim", type=int, default=1)
     ap.add_argument("--end_sim",   type=int, default=N_SIM)
+    ap.add_argument(
+        "--statistical_method",
+        choices=["bootstrap", "gene-permutation", "label-permutation", "all"],
+        default="all",
+        help="Variant type to process when computing importances.",
+    )
     args = ap.parse_args()
 
     reactome = load_reactome_once()
 
-    for i in range(args.start_sim, args.end_sim+1):
-        base = DATA_ROOT/f"{i}"
+    if args.statistical_method == "all":
+        variants = ["bootstrap", "gene-permutation", "label-permutation"]
+    else:
+        variants = [args.statistical_method]
+
+    for i in range(args.start_sim, args.end_sim + 1):
+        base = DATA_ROOT / f"{i}"
         print(f"\n■■ Simulation {i:3d} ■■")
         explain_dataset(base, reactome)  # original
 
-        for vtype in ["bootstrap","gene-permutation","label-permutation"]:
-            for b in range(1, N_VARIANTS+1):
-                vdir = base/vtype/f"{b}"
+        for vtype in variants:
+            for b in range(1, N_VARIANTS + 1):
+                vdir = base / vtype / f"{b}"
                 if vdir.exists():
                     print(f"  → {vtype}/{b}")
                     explain_dataset(vdir, reactome)
