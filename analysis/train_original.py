@@ -2,8 +2,10 @@
 # -*- coding: utf-8 -*-
 """train_original.py
 Perform hyper-parameter search and final training for the original
-simulation datasets. The resulting optimal parameters will be used by
-``train_variants.py`` to train all variant datasets.
+simulation datasets. The dataset location is determined by ``--beta``
+and ``--gamma`` (e.g. ``data/b2_g1.5``). The resulting optimal
+parameters will be used by ``train_variants.py`` to train all variant
+datasets.
 """
 
 import os
@@ -40,7 +42,9 @@ MAX_EPOCHS  = 200
 PATIENCE    = 10
 N_SIM       = 100
 N_VARIANTS  = 100
-DATA_ROOT   = Path("./data/b0_g0.0")
+DEFAULT_BETA  = 0
+DEFAULT_GAMMA = 0.0
+DATA_ROOT   = Path(f"./data/b{DEFAULT_BETA}_g{DEFAULT_GAMMA}")
 NUM_WORKERS = 0
 # ───────────────────────────────────
 
@@ -218,10 +222,17 @@ def main():
     warnings.filterwarnings("ignore", category=UserWarning)
     pl.seed_everything(42, workers=True)
 
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--beta", type=float, default=DEFAULT_BETA)
+    ap.add_argument("--gamma", type=float, default=DEFAULT_GAMMA)
+    args = ap.parse_args()
+
+    data_root = Path(f"./data/b{args.beta}_g{args.gamma}")
+
     reactome = load_reactome_once()
 
     for i in range(1, N_SIM + 1):
-        base_dir = DATA_ROOT / f"{i}"
+        base_dir = data_root / f"{i}"
         print(f"\n■■ Simulation {i:3d} ■■")
 
         train_dataset(base_dir, reactome, best_params=None)

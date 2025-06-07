@@ -5,7 +5,9 @@ pvalue_calculation.py
 ---------------------
 Compute null distributions and p-values for BINN importance scores.
 The variant used to construct the null distribution is selected via
-``--statistical_method``.
+``--statistical_method``. Simulation data are read from a folder
+``data/b{beta}_g{gamma}`` determined by the ``--beta`` and ``--gamma``
+arguments.
 """
 
 from pathlib import Path
@@ -18,8 +20,10 @@ import seaborn as sns
 # user settings
 METHOD = "deeplift"
 N_VARIANTS = 100
-DATA_ROOT = Path("./data/b0_g0.0")
-OUT_ROOT = Path("./results/b0_g0.0")
+DEFAULT_BETA  = 0
+DEFAULT_GAMMA = 0.0
+DATA_ROOT = Path(f"./data/b{DEFAULT_BETA}_g{DEFAULT_GAMMA}")
+OUT_ROOT = Path(f"./results/b{DEFAULT_BETA}_g{DEFAULT_GAMMA}")
 sns.set(style="whitegrid")
 
 def process_sim(sim: int, variant: str):
@@ -94,7 +98,13 @@ def main():
                     help="Variant type used for the null distribution")
     ap.add_argument("--start_sim", type=int, default=1)
     ap.add_argument("--end_sim", type=int, default=100)
+    ap.add_argument("--beta", type=float, default=DEFAULT_BETA)
+    ap.add_argument("--gamma", type=float, default=DEFAULT_GAMMA)
     args = ap.parse_args()
+
+    global DATA_ROOT, OUT_ROOT
+    DATA_ROOT = Path(f"./data/b{args.beta}_g{args.gamma}")
+    OUT_ROOT = Path(f"./results/b{args.beta}_g{args.gamma}")
 
     for i in range(args.start_sim, args.end_sim + 1):
         process_sim(i, args.statistical_method)

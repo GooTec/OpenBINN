@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 """permutation_analysis.py
 Run training, importance calculation and p-value estimation sequentially
-for one or more simulation datasets.
+for one or more simulation datasets. The simulation folder is selected
+via ``--beta`` and ``--gamma``.
 """
 
 import argparse
@@ -29,6 +30,8 @@ def main():
     )
     ap.add_argument("--start_sim", type=int, default=1)
     ap.add_argument("--end_sim", type=int, default=1)
+    ap.add_argument("--beta", type=float, default=0)
+    ap.add_argument("--gamma", type=float, default=0.0)
     args = ap.parse_args()
 
     for i in range(args.start_sim, args.end_sim + 1):
@@ -39,17 +42,20 @@ def main():
             "python", "train_variants.py",
             "--start_sim", str(i), "--end_sim", str(i),
             "--statistical_method", args.statistical_method,
+            "--beta", str(args.beta), "--gamma", str(args.gamma),
         ])
         run([
             "python", "importance_calculation.py",
             "--start_sim", str(i), "--end_sim", str(i),
             "--statistical_method", args.statistical_method,
             "--skip_original",
+            "--beta", str(args.beta), "--gamma", str(args.gamma),
         ])
         run([
             "python", "pvalue_calculation.py",
             "--start_sim", str(i), "--end_sim", str(i),
             "--statistical_method", args.statistical_method,
+            "--beta", str(args.beta), "--gamma", str(args.gamma),
         ])
 
     print("\n✓ permutation analysis finished.")

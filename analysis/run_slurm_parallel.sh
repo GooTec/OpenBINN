@@ -5,6 +5,8 @@
 
 set -e
 
+BETA=0
+GAMMA=0.0
 STAT_METHOD="gene-permutation"
 DEVICE="gpu"
 START=1
@@ -23,6 +25,10 @@ while [[ $# -gt 0 ]]; do
       END="$2"; shift 2;;
     --parallel)
       PARALLEL="$2"; shift 2;;
+    --beta)
+      BETA="$2"; shift 2;;
+    --gamma)
+      GAMMA="$2"; shift 2;;
     *) echo "Unknown option $1"; exit 1;;
   esac
 done
@@ -33,8 +39,9 @@ else
   SRUN_PREFIX="srun --time=50:00:00"
 fi
 
-# Train all original datasets once to obtain optimal parameters and importance
-$SRUN_PREFIX python train_original.py
+# Generate data and train originals once to obtain optimal parameters
+$SRUN_PREFIX python generate_simulations.py --beta "$BETA" --gamma "$GAMMA"
+$SRUN_PREFIX python train_original.py --beta "$BETA" --gamma "$GAMMA"
 
 
 total=$((END - START + 1))
@@ -48,6 +55,7 @@ for ((i=0; i<PARALLEL; i++)); do
   echo "==== Launching simulations ${beg}-${end} ===="
   $SRUN_PREFIX python permutation_analysis.py \
     --statistical_method "$STAT_METHOD" \
+    --beta "$BETA" --gamma "$GAMMA" \
     --start_sim "$beg" --end_sim "$end" &
   count=$((count+1))
 done
