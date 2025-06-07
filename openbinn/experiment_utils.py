@@ -20,14 +20,21 @@ def convert_k_to_int(k, n_feat):
     """
     if k == -1:
         return n_feat
-    if not isinstance(k, int):
-        if isinstance(k, float):
-            if 0 < k < 1:
-                return np.ceil(k * n_feat).astype(int)
-            else:
-                raise ValueError(f'Float value for k {k} must be between 0 and 1')
+
+    # Integer k specifies the exact number of features
+    if isinstance(k, int):
+        if k <= 0:
+            raise ValueError(f'Integer value for k {k} must be positive')
+        return k
+
+    # Float k indicates a fraction of the total features
+    if isinstance(k, float):
+        if 0 < k < 1:
+            return int(np.ceil(k * n_feat))
         else:
-            raise ValueError(f'Invalid type for k: {type(k)}')
+            raise ValueError(f'Float value for k {k} must be between 0 and 1')
+
+    raise ValueError(f'Invalid type for k: {type(k)}')
 
 def load_parameterized_file(prefix, params, extension='.npy'):
     """
