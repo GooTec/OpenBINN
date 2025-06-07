@@ -184,6 +184,11 @@ def main():
         default="all",
         help="Variant type to process when computing importances.",
     )
+    ap.add_argument(
+        "--skip_original",
+        action="store_true",
+        help="Do not calculate importances for original datasets",
+    )
     args = ap.parse_args()
 
     reactome = load_reactome_once()
@@ -196,7 +201,8 @@ def main():
     for i in range(args.start_sim, args.end_sim + 1):
         base = DATA_ROOT / f"{i}"
         print(f"\n■■ Simulation {i:3d} ■■")
-        explain_dataset(base, reactome)  # original
+        if not args.skip_original:
+            explain_dataset(base, reactome)  # original
 
         for vtype in variants:
             for b in range(1, N_VARIANTS + 1):

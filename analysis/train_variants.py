@@ -1,10 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""
-train_all_variants_fast.py
-──────────────────────────
-• b4_g4 시뮬레이션(1‒100)  →  원본 데이터에 대해 한 번 Grid-Search
-  → best (lr*, bs*) 도출  → 그 값으로 변형 300 세트 학습.
+"""train_variants.py
+Train variant simulation datasets using the best hyperparameters
+obtained from training the original datasets (see ``train_original.py``).
 """
 
 import os
@@ -223,8 +221,11 @@ def main():
         base_dir = DATA_ROOT / f"{i}"
         print(f"\n■■ Simulation {i:3d} ■■")
 
-        # ① original → grid search
-        best_params = train_dataset(base_dir, reactome, best_params=None)
+        metrics_fp = base_dir / "results" / "optimal" / "metrics.csv"
+        best_params = load_best_params(metrics_fp)
+        if best_params is None:
+            print(f"[WARN] metrics not found: {metrics_fp}")
+            continue
 
         # ② variants → 고정 best_params
         for vtype in variants:
