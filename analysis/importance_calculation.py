@@ -27,8 +27,8 @@ import openxai.experiment_utils as utils
 METHOD        = "deeplift"   # ← ig, lime, shap 등으로 변경 가능
 N_SIM         = 100
 N_VARIANTS    = 100
-DEFAULT_BETA  = 0
-DEFAULT_GAMMA = 0.0
+DEFAULT_BETA  = 2
+DEFAULT_GAMMA = 2
 DATA_ROOT     = Path(f"./data/b{DEFAULT_BETA}_g{DEFAULT_GAMMA}")
 NUM_WORKERS   = 0
 SEED          = 42

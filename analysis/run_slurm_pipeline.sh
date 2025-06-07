@@ -1,6 +1,7 @@
 #!/bin/bash
 # Run training, importance calculation and p-value estimation using srun.
-# Usage: bash run_slurm_pipeline.sh --statistical_method gene-permutation --device gpu
+# Usage: bash run_slurm_pipeline.sh --statistical_method gene-permutation --device gpu \
+#        --beta 2 --gamma 2
 
 set -e
 
@@ -10,6 +11,8 @@ STAT_METHOD="gene-permutation"
 DEVICE="gpu"
 START=1
 END=100
+BETA=2
+GAMMA=2
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -36,19 +39,21 @@ else
 fi
 
 # Generate data and train originals once
-$SRUN_PREFIX python generate_simulations.py --beta "$BETA" --gamma "$GAMMA"
+$SRUN_PREFIX python generate_b4g4_simulations.py --beta "$BETA" --gamma "$GAMMA"
 $SRUN_PREFIX python train_original.py --beta "$BETA" --gamma "$GAMMA"
 
 for ((i=START;i<=END;i++)); do
   echo "===== Simulation $i ($STAT_METHOD) ====="
   start_time=$(date +%s)
   $SRUN_PREFIX python train_variants.py --start_sim $i --end_sim $i \
-      --statistical_method $STAT_METHOD --beta "$BETA" --gamma "$GAMMA"
+      --statistical_method $STAT_METHOD \
+      --beta $BETA --gamma $GAMMA
   $SRUN_PREFIX python importance_calculation.py --start_sim $i --end_sim $i \
       --statistical_method $STAT_METHOD --skip_original \
-      --beta "$BETA" --gamma "$GAMMA"
+      --beta $BETA --gamma $GAMMA
   $SRUN_PREFIX python pvalue_calculation.py --start_sim $i --end_sim $i \
-      --statistical_method $STAT_METHOD --beta "$BETA" --gamma "$GAMMA"
+      --statistical_method $STAT_METHOD \
+      --beta $BETA --gamma $GAMMA
   end_time=$(date +%s)
   runtime=$((end_time-start_time))
   echo "Simulation $i finished in ${runtime}s" 

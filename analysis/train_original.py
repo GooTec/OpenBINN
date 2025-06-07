@@ -42,8 +42,8 @@ MAX_EPOCHS  = 200
 PATIENCE    = 10
 N_SIM       = 100
 N_VARIANTS  = 100
-DEFAULT_BETA  = 0
-DEFAULT_GAMMA = 0.0
+DEFAULT_BETA  = 2
+DEFAULT_GAMMA = 2
 DATA_ROOT   = Path(f"./data/b{DEFAULT_BETA}_g{DEFAULT_GAMMA}")
 NUM_WORKERS = 0
 # ───────────────────────────────────

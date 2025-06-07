@@ -30,8 +30,9 @@ def main():
     )
     ap.add_argument("--start_sim", type=int, default=1)
     ap.add_argument("--end_sim", type=int, default=1)
-    ap.add_argument("--beta", type=float, default=0)
-    ap.add_argument("--gamma", type=float, default=0.0)
+    ap.add_argument("--beta", type=float, default=2)
+    ap.add_argument("--gamma", type=float, default=2)
+
     args = ap.parse_args()
 
     for i in range(args.start_sim, args.end_sim + 1):
