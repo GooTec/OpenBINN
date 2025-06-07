@@ -101,11 +101,20 @@ def main():
     ap = argparse.ArgumentParser(description="Generate simulation datasets")
     ap.add_argument("--beta", type=float, default=0)
     ap.add_argument("--gamma", type=float, default=0.0)
-    ap.add_argument("--n_sim", type=int, default=N_SIM)
+    ap.add_argument("--n_sim", type=int, default=N_SIM,
+                    help="Number of simulations if --end_sim is not given")
+    ap.add_argument("--start_sim", type=int, default=1,
+                    help="Start index of simulation (inclusive)")
+    ap.add_argument("--end_sim", type=int,
+                    help="End index of simulation (inclusive). Defaults to n_sim")
     args = ap.parse_args()
 
+    end = args.end_sim if args.end_sim is not None else args.n_sim
+    if end < args.start_sim:
+        raise ValueError("end_sim must be >= start_sim")
+
     data_root = Path(f"./data/b{args.beta}_g{args.gamma}")
-    for i in range(1, args.n_sim + 1):
+    for i in range(args.start_sim, end + 1):
         generate_single(data_root / f"{i}", args.beta, args.gamma, seed=42 + i)
     print(f"✓ generated simulations at {data_root}")
 
