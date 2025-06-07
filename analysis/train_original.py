@@ -114,7 +114,7 @@ def train_dataset(scen_dir: Path, reactome, best_params=None):
     metrics_fp   = results_root/"optimal"/"metrics.csv"
 
     if metrics_fp.exists() and best_params is None:
-        print(f"[skip] already trained → {scen_dir.relative_to(DATA_ROOT)}")
+        print(f"[skip] already trained → {scen_dir.relative_to(DATA_ROOT.parent)}")
         best_params = load_best_params(metrics_fp)
     
 
@@ -130,7 +130,7 @@ def train_dataset(scen_dir: Path, reactome, best_params=None):
         summary_rows = []
         for lr, bs in product(LR_LIST, BS_LIST):
             tag = f"lr_{lr:g}_bs_{bs}"
-            print(f"      Grid ▶ {scen_dir.relative_to(DATA_ROOT)} | {tag}")
+            print(f"      Grid ▶ {scen_dir.relative_to(DATA_ROOT.parent)} | {tag}")
 
             tr_loader = GeoLoader(ds, bs,
                                   sampler=SubsetRandomSampler(ds.train_idx),
