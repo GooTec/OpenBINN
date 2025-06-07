@@ -7,7 +7,10 @@ train_all_variants_fast.py
   → best (lr*, bs*) 도출  → 그 값으로 변형 300 세트 학습.
 """
 
-import os, time, warnings, argparse
+import os
+import time
+import warnings
+import argparse
 from pathlib import Path
 from itertools import product
 
@@ -69,6 +72,16 @@ def load_reactome_once():
 # │  · best_params = None  → Grid search + 최적 학습 + 반환      │
 # │  · best_params = (lr*, bs*) → 그 값으로만 학습·평가          │
 # ╰──────────────────────────────────────────────────────────────╯
+def load_best_params(metrics_fp: Path):
+    if metrics_fp.exists():
+        df = pd.read_csv(metrics_fp)
+        lr = float(df.iloc[0].get("best_lr", df.iloc[0].get("best_lr", 1e-3)))
+        bs_col = "best_bs" if "best_bs" in df.columns else "best_batch"
+        bs = int(df.iloc[0].get(bs_col, 16))
+        return (lr, bs)
+    return None
+
+
 def train_dataset(scen_dir: Path, reactome, best_params=None):
     if not (scen_dir / "splits").exists():
         print(f"[WARN] splits 없음: {scen_dir}")
@@ -92,50 +105,55 @@ def train_dataset(scen_dir: Path, reactome, best_params=None):
     search_root.mkdir(parents=True, exist_ok=True)
 
     # ────────────────────────────────
-    # ① Grid-Search (original 에서만)
+    # ① Grid-Search (original 데이터)
     # ────────────────────────────────
-    # if best_params is None:
-    #     summary_rows = []
-    #     for lr, bs in product(LR_LIST, BS_LIST):
-    #         tag = f"lr_{lr:g}_bs_{bs}"
-    #         print(f"      Grid ▶ {scen_dir.relative_to(DATA_ROOT)} | {tag}")
+    metrics_fp = results_root/"optimal"/"metrics.csv"
+    if best_params is None:
+        loaded = load_best_params(metrics_fp)
+        if loaded is not None:
+            best_params = loaded
 
-    #         tr_loader = GeoLoader(ds, bs,
-    #                               sampler=SubsetRandomSampler(ds.train_idx),
-    #                               num_workers=NUM_WORKERS)
-    #         va_loader = GeoLoader(ds, bs,
-    #                               sampler=SubsetRandomSampler(ds.valid_idx),
-    #                               num_workers=NUM_WORKERS)
+    if best_params is None:
+        summary_rows = []
+        for lr, bs in product(LR_LIST, BS_LIST):
+            tag = f"lr_{lr:g}_bs_{bs}"
+            print(f"      Grid ▶ {scen_dir.relative_to(DATA_ROOT)} | {tag}")
 
-    #         model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=lr)
-    #         trainer = pl.Trainer(
-    #             accelerator="auto", deterministic=True, max_epochs=MAX_EPOCHS,
-    #             callbacks=[EarlyStopping("val_loss", patience=PATIENCE,
-    #                                      mode="min", verbose=False, min_delta=0.01)],
-    #             logger=InMemoryLogger(), enable_progress_bar=False
-    #         )
-    #         t0 = time.time(); trainer.fit(model, tr_loader, va_loader)
-    #         run_t = time.time() - t0
+            tr_loader = GeoLoader(ds, bs,
+                                  sampler=SubsetRandomSampler(ds.train_idx),
+                                  num_workers=NUM_WORKERS)
+            va_loader = GeoLoader(ds, bs,
+                                  sampler=SubsetRandomSampler(ds.valid_idx),
+                                  num_workers=NUM_WORKERS)
 
-    #         _, _, tr_auc, _, _ = get_roc(model, tr_loader, exp=False)
-    #         fpr, tpr, va_auc, yv, pv = get_roc(model, va_loader, exp=False)
+            model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=lr)
+            trainer = pl.Trainer(
+                accelerator="auto", deterministic=True, max_epochs=MAX_EPOCHS,
+                callbacks=[EarlyStopping("val_loss", patience=PATIENCE,
+                                         mode="min", verbose=False, min_delta=0.01)],
+                logger=InMemoryLogger(), enable_progress_bar=False
+            )
+            t0 = time.time(); trainer.fit(model, tr_loader, va_loader)
+            run_t = time.time() - t0
 
-    #         exp_dir = search_root/tag; exp_dir.mkdir(exist_ok=True)
-    #         torch.save(model.state_dict(), exp_dir/"trained_model.pth")
-    #         save_roc(fpr, tpr, va_auc, "Validation ROC", exp_dir/"roc_valid.png")
+            _, _, tr_auc, _, _ = get_roc(model, tr_loader, exp=False)
+            fpr, tpr, va_auc, yv, pv = get_roc(model, va_loader, exp=False)
 
-    #         summary_rows.append({
-    #             "lr": lr, "bs": bs, "val_auc": va_auc,
-    #             "runtime": run_t, "train_auc": tr_auc,
-    #             **{f"val_{k}": v for k,v in bin_stats(yv,pv).items()}
-    #         })
+            exp_dir = search_root/tag; exp_dir.mkdir(exist_ok=True)
+            torch.save(model.state_dict(), exp_dir/"trained_model.pth")
+            save_roc(fpr, tpr, va_auc, "Validation ROC", exp_dir/"roc_valid.png")
 
-    #     df = pd.DataFrame(summary_rows).sort_values("val_auc", ascending=False)
-    #     best_lr, best_bs = df.iloc[0][["lr","bs"]].tolist()
-    #     best_params = (best_lr, int(best_bs))
-    # # ────────────────────────────────
+            summary_rows.append({
+                "lr": lr, "bs": bs, "val_auc": va_auc,
+                "runtime": run_t, "train_auc": tr_auc,
+                **{f"val_{k}": v for k,v in bin_stats(yv,pv).items()}
+            })
 
-    best_lr, best_bs = 1e-3, 16
+        df = pd.DataFrame(summary_rows).sort_values("val_auc", ascending=False)
+        best_lr, best_bs = df.iloc[0][["lr","bs"]].tolist()
+        best_params = (best_lr, int(best_bs))
+    else:
+        best_lr, best_bs = best_params
 
     # ────────────────────────────────
     # ② 고정 파라미터로 학습 & 평가
@@ -186,21 +204,32 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--start_sim", type=int, default=1)
     ap.add_argument("--end_sim",   type=int, default=N_SIM)
+    ap.add_argument(
+        "--statistical_method",
+        choices=["bootstrap", "gene-permutation", "label-permutation", "all"],
+        default="gene-permutation",
+        help="Variant type to train. Use 'all' to run every variant.",
+    )
     args = ap.parse_args()
 
     reactome = load_reactome_once()
 
-    for i in range(args.start_sim, args.end_sim+1):
-        base_dir = DATA_ROOT/f"{i}"
+    if args.statistical_method == "all":
+        variants = ["bootstrap", "gene-permutation", "label-permutation"]
+    else:
+        variants = [args.statistical_method]
+
+    for i in range(args.start_sim, args.end_sim + 1):
+        base_dir = DATA_ROOT / f"{i}"
         print(f"\n■■ Simulation {i:3d} ■■")
 
         # ① original → grid search
         best_params = train_dataset(base_dir, reactome, best_params=None)
 
         # ② variants → 고정 best_params
-        for vtype in ["gene-permutation"]:
-            for b in range(1, N_VARIANTS+1):
-                v_dir = base_dir/vtype/f"{b}"
+        for vtype in variants:
+            for b in range(1, N_VARIANTS + 1):
+                v_dir = base_dir / vtype / f"{b}"
                 if v_dir.exists():
                     print(f"    Variant ▶ {vtype}/{b}")
                     train_dataset(v_dir, reactome, best_params=best_params)
