@@ -167,6 +167,7 @@ def train_dataset(scen_dir: Path, reactome, best_params=None):
         best_params = (best_lr, int(best_bs))
     else:
         best_lr, best_bs = best_params
+        best_bs = int(best_bs)
 
     # ────────────────────────────────
     # ② 고정 파라미터로 학습 & 평가
