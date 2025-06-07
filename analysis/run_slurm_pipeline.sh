@@ -39,7 +39,7 @@ else
 fi
 
 # Generate data and train originals once
-$SRUN_PREFIX python generate_b4g4_simulations.py --beta "$BETA" --gamma "$GAMMA"
+$SRUN_PREFIX python sim_data_generation.py --beta "$BETA" --gamma "$GAMMA"
 $SRUN_PREFIX python train_original.py --beta "$BETA" --gamma "$GAMMA"
 
 for ((i=START;i<=END;i++)); do

@@ -58,7 +58,7 @@ python setup.py develop
 1. **Prepare data** by running `bash pull_data.sh`. This downloads the prostate
    dataset into `../data/prostate/` relative to the repository.
 2. **Generate simulation datasets** (optional) using
-   `python analysis/generate_b4g4_simulations.py --beta 2 --gamma 2`.
+   `python analysis/sim_data_generation.py --beta 2 --gamma 2`.
    Adjust `--beta` and `--gamma` to create other folders under `data/`.
 3. **Edit** an experiment config in `configs/`, specifying model type, dataset paths, and analysis options.
 4. **Run** training and evaluation:

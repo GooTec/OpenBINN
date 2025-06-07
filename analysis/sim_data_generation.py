@@ -1,28 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""
-generate_b4g4_simulations.py
-───────────────────────────
-β = 4, γ = 4 고정, 시뮬레이션 i=1‒100.
-각 시뮬레이션 폴더 구조
-
-data/b4_g4/{i}/
-   ├─ somatic_mutation_paper.csv
-   ├─ P1000_data_CNA_paper.csv
-   ├─ response.csv
-   ├─ selected_genes.csv
-   ├─ splits/
-   │    ├─ training_set_0.csv
-   │    ├─ validation_set.csv
-   │    └─ test_set.csv
-   ├─ bootstrap/
-   │    └─ {b=1‒100}/ (3파일+selected_genes.csv+splits)
-   ├─ gene-permutation/
-   │    └─ {b=1‒100}/ (〃)
-   └─ label-permutation/
-        └─ {b=1‒100}/ (〃)
-"""
-
 from pathlib import Path
 import argparse
 import numpy as np
