@@ -131,9 +131,9 @@ def make_label_perm(Xm, Xc, y, rng):
     yp = pd.Series(rng.permutation(y.values), index=y.index, name="response")
     return Xm, Xc, yp
 
-def main():
+def main(start_sim: int = 1, end_sim: int = N_SIM):
     print("▶ Generating simulations & variants …")
-    for i in range(1, N_SIM+1):
+    for i in range(start_sim, end_sim + 1):
         rng_sim = np.random.RandomState(RNG_BASE_SEED + i)
         S   = X_true.values @ alpha
         eta = (BETA*S + GAMMA*S**2) + DELTAS[0]*(BETA*S + GAMMA*S**2) \
@@ -188,7 +188,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate simulation datasets")
     parser.add_argument("--beta", type=float, default=BETA)
     parser.add_argument("--gamma", type=float, default=GAMMA)
+    parser.add_argument("--start_sim", type=int, default=1,
+                        help="Start index of simulation (inclusive)")
+    parser.add_argument("--end_sim", type=int, default=N_SIM,
+                        help="End index of simulation (inclusive)")
     args = parser.parse_args()
     BETA = args.beta
     GAMMA = args.gamma
-    main()
+    main(args.start_sim, args.end_sim)

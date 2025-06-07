@@ -41,8 +41,10 @@ else
 fi
 
 # Generate data and train originals once to obtain optimal parameters
-$SRUN_PREFIX python generate_b4g4_simulations.py --beta "$BETA" --gamma "$GAMMA"
-$SRUN_PREFIX python train_original.py --beta "$BETA" --gamma "$GAMMA"
+$SRUN_PREFIX python generate_b4g4_simulations.py --beta "$BETA" --gamma "$GAMMA" \
+    --start_sim "$START" --end_sim "$END"
+$SRUN_PREFIX python train_original.py --beta "$BETA" --gamma "$GAMMA" \
+    --start_sim "$START" --end_sim "$END"
 
 
 total=$((END - START + 1))
