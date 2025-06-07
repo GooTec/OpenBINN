@@ -164,7 +164,8 @@ def train_dataset(scen_dir: Path, reactome, best_params=None):
 
         df = pd.DataFrame(summary_rows).sort_values("val_auc", ascending=False)
         best_lr, best_bs = df.iloc[0][["lr","bs"]].tolist()
-        best_params = (best_lr, int(best_bs))
+        best_bs = int(best_bs)
+        best_params = (best_lr, best_bs)
     else:
         best_lr, best_bs = best_params
         best_bs = int(best_bs)
