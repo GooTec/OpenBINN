@@ -30,6 +30,13 @@ N_VARIANTS    = 100
 DEFAULT_BETA  = 2
 DEFAULT_GAMMA = 2
 DATA_ROOT     = Path(f"./data/b{DEFAULT_BETA}_g{DEFAULT_GAMMA}")
+# Helper to avoid ``ValueError`` when computing relative paths
+def _rel_to_data(p: Path) -> Path:
+    """Return ``p`` relative to the ``data`` directory if possible."""
+    try:
+        return p.resolve().relative_to(Path("data").resolve())
+    except Exception:
+        return p
 NUM_WORKERS   = 0
 SEED          = 42
 # ──────────────────────────────────────────
@@ -73,7 +80,7 @@ def explain_dataset(scen_dir: Path, reactome):
     model_fp = scen_dir / "results" / "optimal" / "trained_model.pth"
     split_dir = scen_dir / "splits"
     if not model_fp.exists() or not split_dir.exists():
-        print(f"[skip] model 또는 splits 없음 → {scen_dir.relative_to(DATA_ROOT)}")
+        print(f"[skip] model 또는 splits 없음 → {_rel_to_data(scen_dir)}")
         return
 
     # ─ 데이터·맵 ──────────────────────
@@ -168,7 +175,7 @@ def explain_dataset(scen_dir: Path, reactome):
 
     out_fp = scen_dir / f"PNet_{METHOD}_target_scores.csv"
     scored_df.to_csv(out_fp, index=True)
-    print(f"    ✓ scores saved → {out_fp.relative_to(DATA_ROOT)}")
+    print(f"    ✓ scores saved → {_rel_to_data(out_fp)}")
 
 
 # ╭────────────────────────────────────────────────────────────╮
