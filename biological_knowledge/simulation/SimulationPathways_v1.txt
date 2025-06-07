@@ -1,0 +1,5 @@
+R-HSA-2173791	TGF-beta receptor signaling in EMT (epithelial to mesenchymal transition)	Homo sapiens
+R-HSA-170834	Signaling by TGF-beta Receptor Complex	Homo sapiens
+R-HSA-9006936	Signaling by TGF-beta family members	Homo sapiens
+R-HSA-170834-minus-R-HSA-2173791	Genes in Signaling by TGF-beta Receptor Complex excluding TGF-beta receptor signaling in EMT (epithelial to mesenchymal transition)-1   Homo sapiens
+R-HSA-9006936-minus-R-HSA-170834	Signaling by TGF-beta family members minus Signaling by TGF-beta Receptor Complex-1 Homo sapiens

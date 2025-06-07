@@ -1,0 +1,15 @@
+R-HSA-2173791	True Positive Signal (TGF-beta receptor signaling in EMT)	Homo sapiens
+R-HSA-170834	Parent node of True Positive Signal (Signaling by TGF-beta Receptor Complex)	Homo sapiens
+R-HSA-9006936	Superparent node of all genes	Homo sapiens
+R-HSA-170834-1	R-HSA-170834-1	Homo sapiens
+R-HSA-9006936-1	R-HSA-9006936-1	Homo sapiens
+R-HSA-170834-2	R-HSA-170834-2	Homo sapiens
+R-HSA-170834-3	R-HSA-170834-3	Homo sapiens
+R-HSA-9006936-2	R-HSA-9006936-2	Homo sapiens
+R-HSA-9006936-3	R-HSA-9006936-3	Homo sapiens
+R-HSA-9006936-1-1	R-HSA-9006936-1-1	Homo sapiens
+R-HSA-170834-2-1	R-HSA-170834-2-1	Homo sapiens
+R-HSA-9006936-2-1	R-HSA-9006936-2-1	Homo sapiens
+R-HSA-9006936-3-1	R-HSA-9006936-3-1	Homo sapiens
+R-HSA-9006936-2-1-1	R-HSA-9006936-2-1-1	Homo sapiens
+R-HSA-170834-2-1-1	R-HSA-170834-2-1-1	Homo sapiens
