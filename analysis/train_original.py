@@ -223,6 +223,8 @@ def main():
     pl.seed_everything(42, workers=True)
 
     ap = argparse.ArgumentParser()
+    ap.add_argument("--start_sim", type=int, default=1)
+    ap.add_argument("--end_sim",   type=int, default=N_SIM)
     ap.add_argument("--beta", type=float, default=DEFAULT_BETA)
     ap.add_argument("--gamma", type=float, default=DEFAULT_GAMMA)
     args = ap.parse_args()
@@ -231,7 +233,7 @@ def main():
 
     reactome = load_reactome_once()
 
-    for i in range(1, N_SIM + 1):
+    for i in range(args.start_sim, args.end_sim + 1):
         base_dir = data_root / f"{i}"
         print(f"\n■■ Simulation {i:3d} ■■")
 
