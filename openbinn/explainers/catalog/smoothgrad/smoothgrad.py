@@ -1,113 +1,17 @@
+"""Placeholder for the unused SmoothGrad explainer."""
+
 import torch
-import numpy as np
 from ...api import BaseExplainer
-from captum.attr import NoiseTunnel
-from captum.attr import Saliency
 
 
 class SmoothGrad(BaseExplainer):
-    """
-    Provides SmoothGrad attributions.
-    Original paper: https://arxiv.org/abs/1706.03825
-    Captum documentation: https://captum.ai/api/noise_tunnel.html
-    """
+    """Empty implementation for SmoothGrad explanations."""
 
-    def __init__(self, model, n_samples: int = 100, standard_deviation: float = 0.1, seed = None) -> None:
-        """
-        Args:
-            model (torch.nn.Module): model on which to make predictions
-        """
+    def __init__(self, model, *args, **kwargs):
+        super().__init__(model)
 
-        self.n_samples = n_samples
-        self.standard_deviation = standard_deviation
-        self.seed = seed
+    def get_explanations(self, x: torch.Tensor, label=None):  # pragma: no cover
+        raise NotImplementedError("SmoothGrad explainer is not implemented.")
 
-        super(SmoothGrad, self).__init__(model)
-
-    def get_explanations(self, x: torch.Tensor, label=None):
-        """
-        Explain an instance prediction.
-        Args:
-            x (torch.Tensor, [N x 1 x d] for tabular instance; [N x m x n x d] for image instance): feature tensor
-            label (torch.Tensor, [N x ...]): labels to explain
-        Returns:
-            exp (torch.Tensor, [N x 1 x d] for tabular instance; [N x m x n x d] for image instance: instance level explanation):
-        """
-        self.model.eval()
-        self.model.zero_grad()
-        label = self.model(x.float()).argmax(dim=-1) if label is None else label
-
-        if self.seed is not None:
-            torch.manual_seed(self.seed); np.random.seed(self.seed)
-
-        noise_tunnel = NoiseTunnel(Saliency(self.model))
-
-        attribution = noise_tunnel.attribute(x.float(),
-                                             nt_type='smoothgrad',
-                                             target=label,
-                                             nt_samples=self.n_samples,
-                                             stdevs=self.standard_deviation,
-                                             abs=False)
-
-        return attribution
-        
-    def get_layer_explanations(self, inputs, label=None):
-        '''
-        Returns explanations for each layer in the model
-        :param inputs: Input tensor to the model
-        :param label: Label for which the explanation is calculated (optional)
-        :return: Dictionary containing explanations for each layer
-        '''
-        explanations = {}
-        current_input = inputs.clone().detach()
-
-        for name, layer in self.model.named_children():
-            if isinstance(layer, torch.nn.ModuleList):
-                # Handle ModuleList explicitly
-                for i, sub_layer in enumerate(layer):
-                    current_output = sub_layer(current_input)
-
-                    # Calculate SmoothGrad attributions for the current sub-layer's output
-                    noise_tunnel = NoiseTunnel(Saliency(sub_layer))
-                    layer_label = current_output.argmax(dim=-1) if label is None else label
-
-                    if self.seed is not None:
-                        torch.manual_seed(self.seed); np.random.seed(self.seed)
-
-                    sub_layer_attribution = noise_tunnel.attribute(
-                        current_input.float(),
-                        nt_type='smoothgrad',
-                        target=layer_label,
-                        nt_samples=self.n_samples,
-                        stdevs=self.standard_deviation,
-                        abs=False
-                    )
-
-                    # Store explanation for the sub-layer
-                    explanations[f"{name}[{i}]"] = torch.FloatTensor(sub_layer_attribution)
-                    current_input = current_output
-            else:
-                # Handle standard layers
-                current_output = layer(current_input)
-
-                # Calculate SmoothGrad attributions for the current layer's output
-                noise_tunnel = NoiseTunnel(Saliency(layer))
-                layer_label = current_output.argmax(dim=-1) if label is None else label
-
-                if self.seed is not None:
-                    torch.manual_seed(self.seed); np.random.seed(self.seed)
-
-                layer_attribution = noise_tunnel.attribute(
-                    current_input.float(),
-                    nt_type='smoothgrad',
-                    target=layer_label,
-                    nt_samples=self.n_samples,
-                    stdevs=self.standard_deviation,
-                    abs=False
-                )
-
-                # Store the explanation in the dictionary
-                explanations[name] = torch.FloatTensor(layer_attribution)
-                current_input = current_output
-
-        return explanations
+    def get_layer_explanations(self, inputs: torch.Tensor, label=None):  # pragma: no cover
+        raise NotImplementedError("SmoothGrad explainer is not implemented.")
