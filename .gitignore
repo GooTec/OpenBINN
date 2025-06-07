@@ -142,4 +142,3 @@ metric_evals/
 *.pth
 *.pt
 *.pkl
-*.json

@@ -103,7 +103,7 @@ def explain_dataset(scen_dir: Path, reactome):
         num_workers=NUM_WORKERS
     )
 
-    config       = utils.load_config("../experiment_config.json")
+    config       = utils.load_config("../configs/experiment_config.json")
     explain_root = scen_dir / "explanations"; explain_root.mkdir(exist_ok=True)
     model_name   = "PNet"
     data_label   = scen_dir.name        # ex) 1, 37, 5 …
