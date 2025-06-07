@@ -33,10 +33,9 @@ openbinn/
 ├── data/                  # Raw and processed omics datasets
 ├── biological_knowledge/  # files for implementing models with biological knowledge (e.g, Reactome, KEGG, etc.)
 ├── analysis/              # Interpretation scripts and statistical tests
-├── notebooks/             # Jupyter notebooks for demos and tutorials
 ├── scripts/               # Utilities (data preprocessing, evaluation)
 ├── configs/               # Default YAML/JSON config files
-├── requirements.txt       # Python package dependencies
+├── pull_data.sh           # Download datasets from remote source
 ├── setup.py               # Installation script
 └── README.md              # Project overview and instructions
 ```
