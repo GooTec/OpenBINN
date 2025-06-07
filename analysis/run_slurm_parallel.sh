@@ -1,7 +1,8 @@
 #!/bin/bash
 # Run permutation_analysis.py in parallel using srun.
 # Usage example:
-#   bash run_slurm_parallel.sh --statistical_method gene-permutation --device gpu --start 1 --end 100 --parallel 10
+#   bash run_slurm_parallel.sh --statistical_method gene-permutation --device gpu \
+#       --start 1 --end 100 --parallel 10 --beta 2 --gamma 2
 
 set -e
 
@@ -10,6 +11,8 @@ DEVICE="gpu"
 START=1
 END=100
 PARALLEL=1
+BETA=2
+GAMMA=2
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -23,6 +26,10 @@ while [[ $# -gt 0 ]]; do
       END="$2"; shift 2;;
     --parallel)
       PARALLEL="$2"; shift 2;;
+    --beta)
+      BETA="$2"; shift 2;;
+    --gamma)
+      GAMMA="$2"; shift 2;;
     *) echo "Unknown option $1"; exit 1;;
   esac
 done
@@ -34,8 +41,8 @@ else
 fi
 
 # Generate data and train originals once to obtain optimal parameters
-$SRUN_PREFIX python generate_b4g4_simulations.py
-$SRUN_PREFIX python train_original.py
+$SRUN_PREFIX python generate_b4g4_simulations.py --beta "$BETA" --gamma "$GAMMA"
+$SRUN_PREFIX python train_original.py --beta "$BETA" --gamma "$GAMMA"
 
 
 total=$((END - START + 1))
@@ -49,7 +56,8 @@ for ((i=0; i<PARALLEL; i++)); do
   echo "==== Launching simulations ${beg}-${end} ===="
   $SRUN_PREFIX python permutation_analysis.py \
     --statistical_method "$STAT_METHOD" \
-    --start_sim "$beg" --end_sim "$end" &
+    --start_sim "$beg" --end_sim "$end" \
+    --beta "$BETA" --gamma "$GAMMA" &
   count=$((count+1))
 done
 wait

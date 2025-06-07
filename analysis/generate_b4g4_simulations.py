@@ -24,6 +24,7 @@ data/b4_g4/{i}/
 """
 
 from pathlib import Path
+import argparse
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -33,7 +34,7 @@ from sklearn.metrics import roc_curve, auc
 RNG_BASE_SEED = 42
 N_SIM         = 100     # i = 1‒100
 N_VARIANTS    = 100     # b = 1‒100
-BETA, GAMMA   = 2, 2
+BETA, GAMMA   = 2, 2  # default values, can be overridden via CLI
 DELTAS        = (0.5, 0.25)
 OUT_ROOT      = Path("./data")
 
@@ -130,59 +131,64 @@ def make_label_perm(Xm, Xc, y, rng):
     yp = pd.Series(rng.permutation(y.values), index=y.index, name="response")
     return Xm, Xc, yp
 
-# ────────── (3) 시뮬레이션 루프 ──────────
-print("▶ Generating simulations & variants …")
-for i in range(1, N_SIM+1):
-    rng_sim = np.random.RandomState(RNG_BASE_SEED + i)
-    S   = X_true.values @ alpha
-    eta = (BETA*S + GAMMA*S**2) + DELTAS[0]*(BETA*S + GAMMA*S**2) \
-        +  DELTAS[1]*DELTAS[0]*(BETA*S + GAMMA*S**2)
-    p   = 1/(1+np.exp(-eta))
-    y   = pd.Series(rng_sim.binomial(1, p), index=X_true.index, name="response")
+def main():
+    print("▶ Generating simulations & variants …")
+    for i in range(1, N_SIM+1):
+        rng_sim = np.random.RandomState(RNG_BASE_SEED + i)
+        S   = X_true.values @ alpha
+        eta = (BETA*S + GAMMA*S**2) + DELTAS[0]*(BETA*S + GAMMA*S**2) \
+            +  DELTAS[1]*DELTAS[0]*(BETA*S + GAMMA*S**2)
+        p   = 1/(1+np.exp(-eta))
+        y   = pd.Series(rng_sim.binomial(1, p), index=X_true.index, name="response")
 
-    sim_dir = OUT_ROOT / f"b{BETA}_g{GAMMA}" / f"{i}"
-    save_triplet(sim_dir, mutation, cnv_aligned, y)
-    (sim_dir/"selected_genes.csv").write_text(SELECTED_GENES_TXT)
-    make_splits(y, sim_dir/"splits")
+        sim_dir = OUT_ROOT / f"b{BETA}_g{GAMMA}" / f"{i}"
+        save_triplet(sim_dir, mutation, cnv_aligned, y)
+        (sim_dir/"selected_genes.csv").write_text(SELECTED_GENES_TXT)
+        make_splits(y, sim_dir/"splits")
 
-    # 100개 변형 만들기
-    for b in range(1, N_VARIANTS+1):
-        # √ bootstrap
-        bs_Xm, bs_Xc, bs_y = make_bootstrap(
-            mutation, cnv_aligned, y,
-            np.random.RandomState(RNG_BASE_SEED + i*10_000 + b)
-        )
-        bs_dir = sim_dir/"bootstrap"/f"{b}"
-        save_triplet(bs_dir, bs_Xm, bs_Xc, bs_y)
-        (bs_dir/"selected_genes.csv").write_text(SELECTED_GENES_TXT)
-        make_splits(bs_y, bs_dir/"splits")
+        for b in range(1, N_VARIANTS+1):
+            bs_Xm, bs_Xc, bs_y = make_bootstrap(
+                mutation, cnv_aligned, y,
+                np.random.RandomState(RNG_BASE_SEED + i*10_000 + b)
+            )
+            bs_dir = sim_dir/"bootstrap"/f"{b}"
+            save_triplet(bs_dir, bs_Xm, bs_Xc, bs_y)
+            (bs_dir/"selected_genes.csv").write_text(SELECTED_GENES_TXT)
+            make_splits(bs_y, bs_dir/"splits")
 
-        # √ gene-perm
-        gp_Xm, gp_Xc, gp_y = make_gene_perm(
-            mutation, cnv_aligned, y,
-            np.random.RandomState(RNG_BASE_SEED + i*20_000 + b)
-        )
-        gp_dir = sim_dir/"gene-permutation"/f"{b}"
-        save_triplet(gp_dir, gp_Xm, gp_Xc, gp_y)
-        # gene-perm은 permuted columns 기준으로 저장
-        gp_dir.joinpath("selected_genes.csv").write_text(
-            "genes\n"+ "\n".join(gp_Xm.columns)
-        )
-        make_splits(gp_y, gp_dir/"splits")
+            gp_Xm, gp_Xc, gp_y = make_gene_perm(
+                mutation, cnv_aligned, y,
+                np.random.RandomState(RNG_BASE_SEED + i*20_000 + b)
+            )
+            gp_dir = sim_dir/"gene-permutation"/f"{b}"
+            save_triplet(gp_dir, gp_Xm, gp_Xc, gp_y)
+            gp_dir.joinpath("selected_genes.csv").write_text(
+                "genes\n" + "\n".join(gp_Xm.columns)
+            )
+            make_splits(gp_y, gp_dir/"splits")
 
-        # √ label-perm
-        lp_Xm, lp_Xc, lp_y = make_label_perm(
-            mutation, cnv_aligned, y,
-            np.random.RandomState(RNG_BASE_SEED + i*30_000 + b)
-        )
-        lp_dir = sim_dir/"label-permutation"/f"{b}"
-        save_triplet(lp_dir, lp_Xm, lp_Xc, lp_y)
-        (lp_dir/"selected_genes.csv").write_text(SELECTED_GENES_TXT)
-        make_splits(lp_y, lp_dir/"splits")
+            lp_Xm, lp_Xc, lp_y = make_label_perm(
+                mutation, cnv_aligned, y,
+                np.random.RandomState(RNG_BASE_SEED + i*30_000 + b)
+            )
+            lp_dir = sim_dir/"label-permutation"/f"{b}"
+            save_triplet(lp_dir, lp_Xm, lp_Xc, lp_y)
+            (lp_dir/"selected_genes.csv").write_text(SELECTED_GENES_TXT)
+            make_splits(lp_y, lp_dir/"splits")
 
-    # 진행 상황
-    if i == 1 or i % 10 == 0:
-        fpr, tpr, _ = roc_curve(y, p); auc_val = auc(fpr, tpr)
-        print(f"  Sim {i:3d}| prev={y.mean():.3f}  AUC={auc_val:.3f}")
+        if i == 1 or i % 10 == 0:
+            fpr, tpr, _ = roc_curve(y, p)
+            auc_val = auc(fpr, tpr)
+            print(f"  Sim {i:3d}| prev={y.mean():.3f}  AUC={auc_val:.3f}")
 
-print("✓ 모든 시뮬레이션·100개 변형·splits 완료.")
+    print("✓ 모든 시뮬레이션·100개 변형·splits 완료.")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate simulation datasets")
+    parser.add_argument("--beta", type=float, default=BETA)
+    parser.add_argument("--gamma", type=float, default=GAMMA)
+    args = parser.parse_args()
+    BETA = args.beta
+    GAMMA = args.gamma
+    main()
