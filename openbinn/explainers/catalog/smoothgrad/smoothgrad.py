@@ -4,7 +4,7 @@ import torch
 from ...api import BaseExplainer
 from captum.attr import NoiseTunnel
 from captum.attr import InputXGradient as CaptumInputXGradient
-from captum.attr import LayerGradientXInput
+from captum.attr import LayerGradientXActivation
 
 
 class SmoothGrad(BaseExplainer):
@@ -75,7 +75,7 @@ class SmoothGrad(BaseExplainer):
             if target_layer < 7 and "network" in name and int(name.split(".")[-2]) >= target_layer:
                 continue
 
-            base = LayerGradientXInput(self.model, layer)
+            base = LayerGradientXActivation(self.model, layer)
             nt = NoiseTunnel(base)
             if self.classification_type == "binary":
                 attr = nt.attribute(

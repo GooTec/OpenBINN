@@ -3,7 +3,7 @@
 import torch
 from ...api import BaseExplainer
 from captum.attr import InputXGradient as CaptumInputXGradient
-from captum.attr import LayerGradientXInput
+from captum.attr import LayerGradientXActivation
 
 
 class InputTimesGradient(BaseExplainer):
@@ -53,7 +53,7 @@ class InputTimesGradient(BaseExplainer):
             if target_layer < 7 and "network" in name and int(name.split(".")[-2]) >= target_layer:
                 continue
 
-            lig = LayerGradientXInput(self.model, layer)
+            lig = LayerGradientXActivation(self.model, layer)
             if self.classification_type == "binary":
                 attr = lig.attribute(inputs.float(), target=0)
             else:
