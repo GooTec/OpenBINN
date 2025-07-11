@@ -115,7 +115,7 @@ class PnetSimExpDataSet(Dataset):
             idx = idx.tolist()
         x_sample = self.x[idx]
         y_sample = self.y[idx]
-        sample_id = self.subject_id[idx]
+        sample_id = str(self.subject_id[idx])
         return x_sample, y_sample, sample_id
 
 

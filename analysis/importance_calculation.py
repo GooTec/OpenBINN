@@ -143,7 +143,8 @@ def explain_dataset(scen_dir: Path, reactome):
                 expl_acc.setdefault(lname, []).append(ten.detach().cpu().numpy())
             lab_acc.append(y.cpu().numpy())
             pred_acc.append(wrap(X).detach().cpu().numpy())
-            id_acc.append(ids)
+            ids_list = ids.tolist() if torch.is_tensor(ids) else list(ids)
+            id_acc.append([str(i) for i in ids_list])
 
         # ─ save per-layer CSV ───────────
         for idx, (lname, arrs) in enumerate(expl_acc.items()):
@@ -157,9 +158,9 @@ def explain_dataset(scen_dir: Path, reactome):
             cols = list(cur_map.index) if cur_map.shape[0]==W else list(cur_map.columns)
 
             df = pd.DataFrame(expl_arr, columns=cols)
+            df.insert(0, 'sample_id', all_ids)
             df['label']      = labels
             df['prediction'] = preds
-            df['sample_id']  = all_ids
 
             csv_fp = explain_root / f"{model_name}_{data_label}_{METHOD}_L{tgt}_layer{idx}_{split_name}.csv"
             df.to_csv(csv_fp, index=False)
