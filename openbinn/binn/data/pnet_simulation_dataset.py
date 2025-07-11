@@ -89,8 +89,14 @@ class PnetSimDataSet(Dataset):
             "selected_genes": os.path.join(self.root, self._files.get("selected_genes", "selected_genes.csv")),
             "response": os.path.join(self.root, self._files.get("response", "response.csv")),
             "mut_important": os.path.join(self.root, self._files.get("mut_important", "somatic_mutation_paper.csv")),
-            "cnv_amp": os.path.join(self.root, self._files.get("cnv_amp", "P1000_data_CNA_paper.csv")),
-            "cnv_del": os.path.join(self.root, self._files.get("cnv_del", "P1000_data_CNA_paper.csv")),
+            "cnv_amp": os.path.join(
+                self.root,
+                self._files.get("cnv_amp", "somatic_mutation_paper.csv"),
+            ),
+            "cnv_del": os.path.join(
+                self.root,
+                self._files.get("cnv_del", "somatic_mutation_paper.csv"),
+            ),
         }
 
     @property
