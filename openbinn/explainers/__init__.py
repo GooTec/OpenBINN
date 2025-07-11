@@ -1,6 +1,7 @@
 from .api import BaseExplainer
 from .catalog import (
     Gradient,
+    GradientShap,
     SmoothGrad,
     IntegratedGradients,
     InputTimesGradient,

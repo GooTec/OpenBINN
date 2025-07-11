@@ -1,9 +1,10 @@
 # Explainers
-from openbinn.explainers import Gradient, IntegratedGradients,\
+from openbinn.explainers import Gradient, GradientShap, IntegratedGradients,\
     InputTimesGradient, SmoothGrad, LIME, DeepLiftShapExplainer, RandomBaseline, LRP, DeepLift, FeatureAblation
 
 explainers_dict = {
     'grad': Gradient,
+    'gradshap': GradientShap,
     'sg': SmoothGrad,
     'itg': InputTimesGradient,
     'ig': IntegratedGradients,

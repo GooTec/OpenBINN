@@ -1,22 +1,23 @@
-"""SmoothGrad explainer built on gradient × input."""
+"""Gradient SHAP explainer wrapping Captum."""
 
 import torch
 from ...api import BaseExplainer
-from captum.attr import NoiseTunnel
-from captum.attr import InputXGradient as CaptumInputXGradient
-from captum.attr import LayerGradientXInput
+from captum.attr import GradientShap as CaptumGradientShap
+from captum.attr import LayerGradientShap
 
 
-class SmoothGrad(BaseExplainer):
-    """Adds noise and averages gradient×input attributions."""
+class GradientShap(BaseExplainer):
+    """Attributions using randomized gradients."""
 
     def __init__(
         self,
         model,
-        n_samples: int = 20,
-        stdevs: float = 0.1,
+        baseline=None,
+        n_samples: int = 50,
+        stdevs: float = 0.0,
         classification_type: str = "multiclass",
     ) -> None:
+        self.baseline = baseline
         self.n_samples = n_samples
         self.stdevs = stdevs
         self.classification_type = classification_type
@@ -30,30 +31,31 @@ class SmoothGrad(BaseExplainer):
                 label = self.model(x.float()).argmax(dim=-1)
         return label.view(-1)
 
+    def _get_baseline(self, x: torch.Tensor):
+        if self.baseline is None:
+            return torch.zeros_like(x, device=x.device)
+        if self.baseline.shape != x.shape:
+            raise ValueError(
+                f"Baseline shape {self.baseline.shape} does not match input shape {x.shape}."
+            )
+        return self.baseline
+
     def get_explanations(self, x: torch.Tensor, label=None):
         self.model.eval()
         self.model.zero_grad()
 
         label = self._infer_label(x, label)
+        baseline = self._get_baseline(x)
 
-        base = CaptumInputXGradient(self.model)
-        nt = NoiseTunnel(base)
+        gs = CaptumGradientShap(self.model)
 
         if self.classification_type == "binary":
-            attr = nt.attribute(
-                x.float(),
-                nt_type="smoothgrad",
-                stdevs=self.stdevs,
-                n_samples=self.n_samples,
-                target=0,
+            attr = gs.attribute(
+                x.float(), baselines=baseline, target=0, n_samples=self.n_samples, stdevs=self.stdevs
             )
         else:
-            attr = nt.attribute(
-                x.float(),
-                nt_type="smoothgrad",
-                stdevs=self.stdevs,
-                n_samples=self.n_samples,
-                target=label,
+            attr = gs.attribute(
+                x.float(), baselines=baseline, target=label, n_samples=self.n_samples, stdevs=self.stdevs
             )
 
         return attr
@@ -65,6 +67,7 @@ class SmoothGrad(BaseExplainer):
         self.model.zero_grad()
 
         label = self._infer_label(inputs, label)
+        baseline = self._get_baseline(inputs)
 
         explanations = {}
         for name, layer in self.model.named_modules():
@@ -75,23 +78,14 @@ class SmoothGrad(BaseExplainer):
             if target_layer < 7 and "network" in name and int(name.split(".")[-2]) >= target_layer:
                 continue
 
-            base = LayerGradientXInput(self.model, layer)
-            nt = NoiseTunnel(base)
+            lgs = LayerGradientShap(self.model, layer)
             if self.classification_type == "binary":
-                attr = nt.attribute(
-                    inputs.float(),
-                    nt_type="smoothgrad",
-                    stdevs=self.stdevs,
-                    n_samples=self.n_samples,
-                    target=0,
+                attr = lgs.attribute(
+                    inputs.float(), baselines=baseline, target=0, n_samples=self.n_samples, stdevs=self.stdevs
                 )
             else:
-                attr = nt.attribute(
-                    inputs.float(),
-                    nt_type="smoothgrad",
-                    stdevs=self.stdevs,
-                    n_samples=self.n_samples,
-                    target=label,
+                attr = lgs.attribute(
+                    inputs.float(), baselines=baseline, target=label, n_samples=self.n_samples, stdevs=self.stdevs
                 )
             explanations[name] = attr
 
