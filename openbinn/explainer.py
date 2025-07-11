@@ -38,6 +38,10 @@ def Explainer(method, model, param_dict=None):
         )
 
     expl_cls = explainers_dict[method]
+
+    # gradient based explainers shouldn't receive a baseline tensor
+    if method in {'itg', 'sg', 'grad', 'gradshap'}:
+        param_dict = {k: v for k, v in param_dict.items() if k != 'baseline'}
     sig = inspect.signature(expl_cls.__init__)
     valid_params = {k: v for k, v in param_dict.items() if k in sig.parameters}
 
