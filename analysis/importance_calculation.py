@@ -131,8 +131,11 @@ def explain_dataset(scen_dir: Path, reactome):
         for X, y, ids in test_loader:
             X = X.float(); y = y.long()
             p_conf = utils.fill_param_dict(METHOD, config['explainers'][METHOD], X)
-            p_conf['baseline']             = torch.zeros_like(X)
-            p_conf['classification_type']  = 'binary'
+            p_conf['classification_type'] = 'binary'
+
+            # gradient-based methods do not require a baseline tensor
+            if METHOD not in {'itg', 'sg', 'grad', 'lrp', 'lime', 'control', 'feature_ablation'}:
+                p_conf['baseline'] = torch.zeros_like(X)
 
             explainer = Explainer(METHOD, wrap, p_conf)
             exp_dict  = explainer.get_layer_explanations(X, y)
