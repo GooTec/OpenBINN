@@ -11,6 +11,13 @@ explain_all_variants.py
 
 from pathlib import Path
 import os, warnings, argparse, time
+import sys
+
+# ensure repository root is on the path so that `openbinn` can be imported when
+# executing this script from within the ``analysis`` directory
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import torch
 import numpy as np
@@ -18,10 +25,10 @@ import pandas as pd
 from torch.utils.data.sampler import SubsetRandomSampler
 from torch_geometric.loader import DataLoader
 
-from openxai.binn import PNet
-from openxai.binn.data import PnetSimExpDataSet, ReactomeNetwork, get_layer_maps
-from openxai.explainer import Explainer
-import openxai.experiment_utils as utils
+from openbinn.binn import PNet
+from openbinn.binn.data import PnetSimExpDataSet, ReactomeNetwork, get_layer_maps
+from openbinn.explainer import Explainer
+import openbinn.experiment_utils as utils
 
 # ──────────────────────────────────────────
 METHOD        = "deeplift"   # ← ig, lime, shap 등으로 변경 가능

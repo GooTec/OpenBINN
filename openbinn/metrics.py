@@ -132,7 +132,7 @@ def eval_relative_stability(explainer, inputs, model, perturb_method, feature_me
     Compute the relative stability of the explanations with respect to the input representations
     :param explainer: Explainer object instance
     :param inputs: np.array of shape (n_inputs, n_features)
-    :param model: instance of openxai ann/lr model
+    :param model: instance of a trained BINN model
     :param perturb_method: instance perturb method object e.g. NormalPerturbation
     :param feature_metadata: list of letters corresponding to feature types ('c' for continuous, 'd' for discrete)
     :param metric: str, 'RIS', 'RRS', or 'ROS'
