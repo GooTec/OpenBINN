@@ -61,15 +61,23 @@ class PnetSimExpDataSet(Dataset):
         valid_set = pd.read_csv(valid_fp, index_col=0)
         test_set = pd.read_csv(test_fp, index_col=0)
 
-        patients_train = list(train_set.loc[:, "id"])
+        def _get_ids(df):
+            if "id" in df.columns:
+                return df["id"]
+            for c in df.columns:
+                if c.lower().startswith("id"):
+                    return df[c]
+            return df.index
+
+        patients_train = list(_get_ids(train_set))
         both = set(self.subject_id).intersection(patients_train)
         self.train_idx = [self.subject_id.index(x) for x in both]
 
-        patients_valid = list(valid_set.loc[:, "id"])
+        patients_valid = list(_get_ids(valid_set))
         both = set(self.subject_id).intersection(patients_valid)
         self.valid_idx = [self.subject_id.index(x) for x in both]
 
-        patients_test = list(test_set.loc[:, "id"])
+        patients_test = list(_get_ids(test_set))
         both = set(self.subject_id).intersection(patients_test)
         self.test_idx = [self.subject_id.index(x) for x in both]
 
