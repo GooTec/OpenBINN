@@ -5,8 +5,7 @@ explain_all_variants.py
 ───────────────────────
 ◆ 입력  : data/b4_g4/{i}/[..., bootstrap/{b}, gene-permutation/{b}, label-permutation/{b}]
           └─ results/optimal/trained_model.pth      (〈train_all_variants_fast.py〉 산출물)
-◆ 출력  : explanations/*.csv  (레이어별 원시 explain) +
-          PNet_{method}_target_scores.csv (집계·표준화 중요도)
+◆ 출력  : explanations/*.csv  (레이어별 각 샘플의 raw importance)
 """
 
 from pathlib import Path
@@ -165,27 +164,7 @@ def explain_dataset(scen_dir: Path, reactome):
             csv_fp = explain_root / f"{model_name}_{data_label}_{METHOD}_L{tgt}_layer{idx}_{split_name}.csv"
             df.to_csv(csv_fp, index=False)
 
-    # ───────────────── 중요도 집계 & 스코어 ─────────────────
-    layer_imp_list = []
-    for layer in range(4):                         # layer 0‒3
-        imps = []
-        for tgt in range(1,5):
-            fp = explain_root / f"{model_name}_{data_label}_{METHOD}_L{tgt}_layer{layer}_{split_name}.csv"
-            if fp.exists():
-                imps.append(pd.read_csv(fp, index_col=-1))
-        if not imps: continue
-        agg = np.abs(imps[0].iloc[:, :-2]).copy()
-        for df in imps[1:]:
-            agg += np.abs(df.iloc[:, :-2])
-        layer_imp_list.append(pd.DataFrame({
-            'importance': agg.sum(axis=0), 'layer': layer
-        }))
-    layer_imp_df = pd.concat(layer_imp_list, axis=0)
-    scored_df    = connectivity_corrected_scores(layer_imp_df)
-
-    out_fp = scen_dir / f"PNet_{METHOD}_target_scores.csv"
-    scored_df.to_csv(out_fp, index=True)
-    print(f"    ✓ scores saved → {_rel_to_data(out_fp)}")
+    print("    ✓ raw per-sample importance saved")
 
 
 # ╭────────────────────────────────────────────────────────────╮
