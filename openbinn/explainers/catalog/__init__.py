@@ -1,5 +1,6 @@
 from .ebp import EBP
 from .grad import Gradient
+from .gradient_shap import GradientShap
 from .input_x_gradient import InputTimesGradient
 from .integrated_gradients import IntegratedGradients
 from .lime import LIME

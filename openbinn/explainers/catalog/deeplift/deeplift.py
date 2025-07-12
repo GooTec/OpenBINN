@@ -69,7 +69,7 @@ class DeepLift(BaseExplainer):
         Returns:
             explanations (dict): Dictionary containing explanations for each layer
         """
-        target_layer = self.model.print_layer
+        target_layer = getattr(self.model, "print_layer", 0)
         # print(target_layer)
 
         explanations = {}

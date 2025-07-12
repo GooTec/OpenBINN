@@ -1,27 +1,26 @@
-"""Integrated Gradients explainer wrapping Captum."""
+"""Gradient SHAP explainer wrapping Captum."""
 
 import torch
 from ...api import BaseExplainer
-from captum.attr import IntegratedGradients as CaptumIntegratedGradients
-from captum.attr import LayerIntegratedGradients
+from captum.attr import GradientShap as CaptumGradientShap
+from captum.attr import LayerGradientShap
 
 
-class IntegratedGradients(BaseExplainer):
-    """Provides Integrated Gradients attributions."""
+class GradientShap(BaseExplainer):
+    """Attributions using randomized gradients."""
 
     def __init__(
         self,
         model,
-        multiply_by_inputs: bool = True,
         baseline=None,
-        n_steps: int = 50,
+        n_samples: int = 50,
+        stdevs: float = 0.0,
         classification_type: str = "multiclass",
     ) -> None:
-        self.multiply_by_inputs = multiply_by_inputs
         self.baseline = baseline
-        self.n_steps = n_steps
+        self.n_samples = n_samples
+        self.stdevs = stdevs
         self.classification_type = classification_type
-
         super().__init__(model)
 
     def _infer_label(self, x: torch.Tensor, label):
@@ -48,18 +47,18 @@ class IntegratedGradients(BaseExplainer):
         label = self._infer_label(x, label)
         baseline = self._get_baseline(x)
 
-        ig = CaptumIntegratedGradients(self.model, multiply_by_inputs=self.multiply_by_inputs)
+        gs = CaptumGradientShap(self.model)
 
         if self.classification_type == "binary":
-            attribution = ig.attribute(
-                x.float(), baselines=baseline, target=0, n_steps=self.n_steps
+            attr = gs.attribute(
+                x.float(), baselines=baseline, target=0, n_samples=self.n_samples, stdevs=self.stdevs
             )
         else:
-            attribution = ig.attribute(
-                x.float(), baselines=baseline, target=label, n_steps=self.n_steps
+            attr = gs.attribute(
+                x.float(), baselines=baseline, target=label, n_samples=self.n_samples, stdevs=self.stdevs
             )
 
-        return attribution
+        return attr
 
     def get_layer_explanations(self, inputs: torch.Tensor, label=None):
         target_layer = getattr(self.model, "print_layer", 0)
@@ -71,7 +70,6 @@ class IntegratedGradients(BaseExplainer):
         baseline = self._get_baseline(inputs)
 
         explanations = {}
-
         for name, layer in self.model.named_modules():
             if not hasattr(layer, "weight") and not hasattr(layer, "bias"):
                 continue
@@ -80,20 +78,14 @@ class IntegratedGradients(BaseExplainer):
             if target_layer < 7 and "network" in name and int(name.split(".")[-2]) >= target_layer:
                 continue
 
-            lig = LayerIntegratedGradients(self.model, layer)
+            lgs = LayerGradientShap(self.model, layer)
             if self.classification_type == "binary":
-                attr = lig.attribute(
-                    inputs.float(),
-                    baselines=baseline,
-                    target=0,
-                    n_steps=self.n_steps,
+                attr = lgs.attribute(
+                    inputs.float(), baselines=baseline, target=0, n_samples=self.n_samples, stdevs=self.stdevs
                 )
             else:
-                attr = lig.attribute(
-                    inputs.float(),
-                    baselines=baseline,
-                    target=label,
-                    n_steps=self.n_steps,
+                attr = lgs.attribute(
+                    inputs.float(), baselines=baseline, target=label, n_samples=self.n_samples, stdevs=self.stdevs
                 )
             explanations[name] = attr
 

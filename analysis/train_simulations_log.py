@@ -14,6 +14,11 @@ train_all_variants_fast.py  (CSVLogger 버전)
 import os, time, warnings, argparse
 from pathlib import Path
 from itertools import product
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -28,9 +33,9 @@ from sklearn.metrics import (
     f1_score, precision_score, recall_score
 )
 
-from openxai.binn import PNet
-from openxai.binn.util import get_roc
-from openxai.binn.data import PnetSimDataSet, ReactomeNetwork, get_layer_maps
+from openbinn.binn import PNet
+from openbinn.binn.util import get_roc
+from openbinn.binn.data import PnetSimDataSet, ReactomeNetwork, get_layer_maps
 
 # ───────────────────────────────────
 LR_LIST     = [1e-3, 5e-3]

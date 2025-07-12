@@ -5,12 +5,18 @@ explain_all_variants.py
 ───────────────────────
 ◆ 입력  : data/b4_g4/{i}/[..., bootstrap/{b}, gene-permutation/{b}, label-permutation/{b}]
           └─ results/optimal/trained_model.pth      (〈train_all_variants_fast.py〉 산출물)
-◆ 출력  : explanations/*.csv  (레이어별 원시 explain) +
-          PNet_{method}_target_scores.csv (집계·표준화 중요도)
+◆ 출력  : explanations/*.csv  (레이어별 각 샘플의 raw importance)
 """
 
 from pathlib import Path
 import os, warnings, argparse, time
+import sys
+
+# ensure repository root is on the path so that `openbinn` can be imported when
+# executing this script from within the ``analysis`` directory
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import torch
 import numpy as np
@@ -18,10 +24,10 @@ import pandas as pd
 from torch.utils.data.sampler import SubsetRandomSampler
 from torch_geometric.loader import DataLoader
 
-from openxai.binn import PNet
-from openxai.binn.data import PnetSimExpDataSet, ReactomeNetwork, get_layer_maps
-from openxai.explainer import Explainer
-import openxai.experiment_utils as utils
+from openbinn.binn import PNet
+from openbinn.binn.data import PnetSimExpDataSet, ReactomeNetwork, get_layer_maps
+from openbinn.explainer import Explainer
+import openbinn.experiment_utils as utils
 
 # ──────────────────────────────────────────
 METHOD        = "deeplift"   # ← ig, lime, shap 등으로 변경 가능
@@ -124,8 +130,11 @@ def explain_dataset(scen_dir: Path, reactome):
         for X, y, ids in test_loader:
             X = X.float(); y = y.long()
             p_conf = utils.fill_param_dict(METHOD, config['explainers'][METHOD], X)
-            p_conf['baseline']             = torch.zeros_like(X)
-            p_conf['classification_type']  = 'binary'
+            p_conf['classification_type'] = 'binary'
+
+            # gradient-based methods do not require a baseline tensor
+            if METHOD not in {'itg', 'sg', 'grad', 'lrp', 'lime', 'control', 'feature_ablation'}:
+                p_conf['baseline'] = torch.zeros_like(X)
 
             explainer = Explainer(METHOD, wrap, p_conf)
             exp_dict  = explainer.get_layer_explanations(X, y)
@@ -134,7 +143,8 @@ def explain_dataset(scen_dir: Path, reactome):
                 expl_acc.setdefault(lname, []).append(ten.detach().cpu().numpy())
             lab_acc.append(y.cpu().numpy())
             pred_acc.append(wrap(X).detach().cpu().numpy())
-            id_acc.append(ids)
+            ids_list = ids.tolist() if torch.is_tensor(ids) else list(ids)
+            id_acc.append([str(i) for i in ids_list])
 
         # ─ save per-layer CSV ───────────
         for idx, (lname, arrs) in enumerate(expl_acc.items()):
@@ -148,34 +158,14 @@ def explain_dataset(scen_dir: Path, reactome):
             cols = list(cur_map.index) if cur_map.shape[0]==W else list(cur_map.columns)
 
             df = pd.DataFrame(expl_arr, columns=cols)
+            df.insert(0, 'sample_id', all_ids)
             df['label']      = labels
             df['prediction'] = preds
-            df['sample_id']  = all_ids
 
             csv_fp = explain_root / f"{model_name}_{data_label}_{METHOD}_L{tgt}_layer{idx}_{split_name}.csv"
             df.to_csv(csv_fp, index=False)
 
-    # ───────────────── 중요도 집계 & 스코어 ─────────────────
-    layer_imp_list = []
-    for layer in range(4):                         # layer 0‒3
-        imps = []
-        for tgt in range(1,5):
-            fp = explain_root / f"{model_name}_{data_label}_{METHOD}_L{tgt}_layer{layer}_{split_name}.csv"
-            if fp.exists():
-                imps.append(pd.read_csv(fp, index_col=-1))
-        if not imps: continue
-        agg = np.abs(imps[0].iloc[:, :-2]).copy()
-        for df in imps[1:]:
-            agg += np.abs(df.iloc[:, :-2])
-        layer_imp_list.append(pd.DataFrame({
-            'importance': agg.sum(axis=0), 'layer': layer
-        }))
-    layer_imp_df = pd.concat(layer_imp_list, axis=0)
-    scored_df    = connectivity_corrected_scores(layer_imp_df)
-
-    out_fp = scen_dir / f"PNet_{METHOD}_target_scores.csv"
-    scored_df.to_csv(out_fp, index=True)
-    print(f"    ✓ scores saved → {_rel_to_data(out_fp)}")
+    print("    ✓ raw per-sample importance saved")
 
 
 # ╭────────────────────────────────────────────────────────────╮
