@@ -25,11 +25,15 @@ GAMMA_LIST = [0.0, 0.5, 1.0, 2.0]
 METHODS = ["deeplift", "ig", "gradshap", "itg", "shap"]
 
 
-def generate(beta: float, gamma: float):
+GEN_SCRIPT = Path(__file__).resolve().parent / "generate_simulations.py"
+
+
+def generate(beta: float, gamma: float) -> None:
+    """Generate a single simulation dataset for the given parameters."""
     subprocess.run(
         [
             "python",
-            "analysis/generate_simulations.py",
+            str(GEN_SCRIPT),
             "--beta",
             str(beta),
             "--gamma",
@@ -170,7 +174,7 @@ if __name__ == "__main__":
     for beta in BETA_LIST:
         for gamma in GAMMA_LIST:
             generate(beta, gamma)
-            scenario = Path(f"./data/b{beta}_g{gamma}/1")
+            scenario = Path("data") / f"b{beta}_g{gamma}" / "1"
             maps = train_dataset(scenario, reactome)
             for method in METHODS:
                 explain_dataset(scenario, reactome, maps, method)
