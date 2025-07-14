@@ -45,8 +45,8 @@ def get_roc(
                 tb = tb.to(device)
                 y=tb.y
             else:
-                x,y=tb
-                tb=x
+                x, y = tb
+                tb = x.to(device)
             
             output = model(tb)
     
