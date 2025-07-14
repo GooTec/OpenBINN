@@ -96,7 +96,7 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
         def _compute_loss_acc(self, pl_module, loader):
             device = pl_module.device
             total_loss = 0.0
-            correct = 0
+            correct = 0.0
             total = 0
             pl_module.eval()
             with torch.no_grad():
@@ -105,7 +105,7 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
                     y = y.to(device)
                     out = pl_module.step((x, y), "eval")
                     total_loss += out["loss"].item() * out["total"]
-                    correct += out["correct"]
+                    correct += out["correct"].item()
                     total += out["total"]
             return total_loss / total, correct / total
 
@@ -120,16 +120,16 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
                 te_loss, te_acc = self._compute_loss_acc(pl_module, te_loader)
                 self.records.append(
                     {
-                        "epoch": epoch,
-                        "train_loss": tr_loss,
-                        "val_loss": va_loss,
-                        "test_loss": te_loss,
-                        "train_accuracy": tr_acc,
-                        "val_accuracy": va_acc,
-                        "test_accuracy": te_acc,
-                        "train_auc": tr_auc,
-                        "val_auc": va_auc,
-                        "test_auc": te_auc,
+                        "epoch": int(epoch),
+                        "train_loss": float(tr_loss),
+                        "val_loss": float(va_loss),
+                        "test_loss": float(te_loss),
+                        "train_accuracy": float(tr_acc),
+                        "val_accuracy": float(va_acc),
+                        "test_accuracy": float(te_acc),
+                        "train_auc": float(tr_auc),
+                        "val_auc": float(va_auc),
+                        "test_auc": float(te_auc),
                     }
                 )
                 df = pd.DataFrame(self.records)
