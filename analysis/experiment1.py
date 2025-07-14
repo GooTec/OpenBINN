@@ -162,6 +162,11 @@ class ModelWrapper(torch.nn.Module):
     def __init__(self, model: PNet, target_layer: int):
         super().__init__()
         self.model = model
+        # openbinn explainers look for ``print_layer`` on the wrapped model to
+        # determine which intermediate layer's output should be returned.  When
+        # not present the explainers fall back to ``0`` which ends up skipping
+        # every layer and therefore yields an empty explanation dictionary.
+        self.print_layer = target_layer
         self.target_layer = target_layer
 
     def forward(self, x):
