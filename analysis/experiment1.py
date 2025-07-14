@@ -8,8 +8,6 @@ elif (cwd.parent / 'openbinn').exists():
 
 import argparse
 
-import sys
-from pathlib import Path
 import subprocess
 
 import pytorch_lightning as pl
@@ -32,11 +30,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-cwd = Path.cwd()
-if (cwd / 'openbinn').exists():
-    sys.path.insert(0, str(cwd))
-elif (cwd.parent / 'openbinn').exists():
-    sys.path.insert(0, str(cwd.parent))
 
 BETA_LIST = [0.5, 1.0, 2.0, 4.0]
 GAMMA_LIST = [0.5, 1.0, 2.0, 4.0]
@@ -100,19 +93,73 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
             self.period = period
             self.records = []
 
+        def _compute_loss_acc(self, pl_module, loader):
+            device = pl_module.device
+            total_loss = 0.0
+            correct = 0
+            total = 0
+            pl_module.eval()
+            with torch.no_grad():
+                for x, y in loader:
+                    x = x.to(device)
+                    y = y.to(device)
+                    out = pl_module.step((x, y), "eval")
+                    total_loss += out["loss"].item() * out["total"]
+                    correct += out["correct"]
+                    total += out["total"]
+            return total_loss / total, correct / total
+
         def on_validation_epoch_end(self, trainer, pl_module):
             epoch = trainer.current_epoch + 1
             if epoch % self.period == 0 or epoch == trainer.max_epochs:
                 tr_auc = get_roc(pl_module, tr_loader, exp=False)[2]
                 va_auc = get_roc(pl_module, va_loader, exp=False)[2]
                 te_auc = get_roc(pl_module, te_loader, exp=False)[2]
-                self.records.append({"epoch": epoch, "train_auc": tr_auc, "val_auc": va_auc, "test_auc": te_auc})
+                tr_loss, tr_acc = self._compute_loss_acc(pl_module, tr_loader)
+                va_loss, va_acc = self._compute_loss_acc(pl_module, va_loader)
+                te_loss, te_acc = self._compute_loss_acc(pl_module, te_loader)
+                self.records.append(
+                    {
+                        "epoch": epoch,
+                        "train_loss": tr_loss,
+                        "val_loss": va_loss,
+                        "test_loss": te_loss,
+                        "train_accuracy": tr_acc,
+                        "val_accuracy": va_acc,
+                        "test_accuracy": te_acc,
+                        "train_auc": tr_auc,
+                        "val_auc": va_auc,
+                        "test_auc": te_auc,
+                    }
+                )
                 df = pd.DataFrame(self.records)
                 perf_dir = results_dir / "performance"
                 perf_dir.mkdir(parents=True, exist_ok=True)
                 df.to_csv(perf_dir / "metrics.csv", index=False)
                 vis_dir = results_dir / "visualize"
                 vis_dir.mkdir(parents=True, exist_ok=True)
+                plt.figure()
+                plt.plot(df["epoch"], df["train_loss"], label="train")
+                plt.plot(df["epoch"], df["val_loss"], label="val")
+                plt.plot(df["epoch"], df["test_loss"], label="test")
+                plt.xlabel("Epoch")
+                plt.ylabel("Loss")
+                plt.legend()
+                plt.tight_layout()
+                plt.savefig(vis_dir / "loss_curve.png")
+                plt.close()
+
+                plt.figure()
+                plt.plot(df["epoch"], df["train_accuracy"], label="train")
+                plt.plot(df["epoch"], df["val_accuracy"], label="val")
+                plt.plot(df["epoch"], df["test_accuracy"], label="test")
+                plt.xlabel("Epoch")
+                plt.ylabel("Accuracy")
+                plt.legend()
+                plt.tight_layout()
+                plt.savefig(vis_dir / "accuracy_curve.png")
+                plt.close()
+
                 plt.figure()
                 plt.plot(df["epoch"], df["train_auc"], label="train")
                 plt.plot(df["epoch"], df["val_auc"], label="val")

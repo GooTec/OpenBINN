@@ -148,9 +148,9 @@ class PNet(BaseNet):
             weights=None
             
         for aa, y in enumerate(y_hat):
-            ## Here we take a weighted average of the preditive outputs. Intermediate layers first
-            loss += self.loss_weights[aa] * F.binary_cross_entropy(y, y_true,weight=weights)
-        loss /= np.sum(self.loss_weights[aa])
+            # Weighted average of the predictive outputs from intermediate layers
+            loss += self.loss_weights[aa] * F.binary_cross_entropy(y, y_true, weight=weights)
+        loss /= np.sum(self.loss_weights)
 
         correct = ((y_hat[-1] > 0.5).flatten() == y_true.flatten()).sum()
         # assess accuracy
