@@ -142,3 +142,5 @@ metric_evals/
 *.pth
 *.pt
 *.pkl
+*.out
+*.err

@@ -1,4 +1,12 @@
-import argparse
+import sys
+from pathlib import Path
+cwd = Path.cwd()
+if (cwd / 'openbinn').exists():
+    sys.path.insert(0, str(cwd))
+elif (cwd.parent / 'openbinn').exists():
+    sys.path.insert(0, str(cwd.parent))
+
+
 import subprocess
 from pathlib import Path
 
@@ -21,13 +29,11 @@ import numpy as np
 import pandas as pd
 
 
-EXP_NUM = 1
-BETA_LIST = [0.0, 0.5, 1.0, 1.5, 2.0]
-GAMMA_LIST = [0.0, 0.5, 1.0, 2.0]
+BETA_LIST = [0.5]
+GAMMA_LIST = [0.5]
 METHODS = ["deeplift", "ig", "gradshap", "itg", "shap"]
 
 
-GEN_SCRIPT = Path(__file__).resolve().parent / "generate_simulations.py"
 
 
 def generate(beta: float, gamma: float) -> None:
@@ -35,7 +41,7 @@ def generate(beta: float, gamma: float) -> None:
     subprocess.run(
         [
             "python",
-            str(GEN_SCRIPT),
+            "generate_simulations.py",
             "--beta",
             str(beta),
             "--gamma",
@@ -105,38 +111,28 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
 def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: str):
     ds = PnetSimExpDataSet(root=str(data_dir), num_features=1)
     ds.split_index_by_file(
-        train_fp=data_dir / "splits" / "training_set_0.csv",
-        valid_fp=data_dir / "splits" / "validation_set.csv",
-        test_fp=data_dir / "splits" / "test_set.csv",
+        train_fp=scen_dir/'splits'/'training_set_0.csv',
+        valid_fp=scen_dir/'splits'/'validation_set.csv',
+        test_fp =scen_dir/'splits'/'test_set.csv',
     )
-    maps = get_layer_maps(
-        genes=list(ds.node_index),
-        reactome=reactome,
-        n_levels=3,
-        direction="root_to_leaf",
-        add_unk_genes=False,
-    )
+    maps = get_layer_maps(genes=list(ds.node_index), reactome=reactome, n_levels=3, direction='root_to_leaf', add_unk_genes=False)
     ds.node_index = [g for g in ds.node_index if g in maps[0].index]
     model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=0.001)
-    state = torch.load(results_dir / "optimal" / "trained_model.pth", map_location="cpu")
-    model.load_state_dict(state)
-    model.eval()
-    loader = GeoLoader(
-        ds,
-        batch_size=len(ds.test_idx),
-        sampler=SubsetRandomSampler(ds.test_idx),
-        num_workers=0,
-    )
-    explain_root = results_dir / "explanations"
+    state = torch.load(scen_dir/'results'/'optimal'/'trained_model.pth', map_location='cpu')
+    model.load_state_dict(state); model.eval()
+    loader = GeoLoader(ds, batch_size=len(ds.test_idx), sampler=SubsetRandomSampler(ds.test_idx), num_workers=0)
+    explain_root = scen_dir/'explanations'
     explain_root.mkdir(exist_ok=True)
-    for tgt in range(1, len(maps) + 1):
+    print("#samples in ds         :", len(ds))
+    print("#test-indices in ds    :", len(ds.test_idx))
+    print("first 10 test-idx      :", ds.test_idx[:10])
+
+    for tgt in range(1, len(maps)+1):
+        print(f"Explaining {method} for target layer {tgt} ...")
         wrap = ModelWrapper(model, tgt)
         expl_acc, lab_acc, pred_acc, id_acc = {}, [], [], []
         for X, y, ids in loader:
-            p_conf = utils.fill_param_dict(method, {}, X)
-            p_conf["classification_type"] = "binary"
-            if method not in {"itg", "sg", "grad", "gradshap", "control", "feature_ablation"}:
-                p_conf["baseline"] = torch.zeros_like(X)
+            p_conf = {'baseline': torch.zeros_like(X), 'classification_type': 'binary'}
             explainer = Explainer(method, wrap, p_conf)
             exp_dict = explainer.get_layer_explanations(X, y)
             for lname, ten in exp_dict.items():
@@ -144,19 +140,21 @@ def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: s
             lab_acc.append(y.cpu().numpy())
             pred_acc.append(wrap(X).detach().cpu().numpy())
             id_acc.append(ids)
+        print(len(expl_acc), "explanations found for", method)
         for idx, (lname, arrs) in enumerate(expl_acc.items()):
+            print(f"Saving {method} layer {tgt} explanation for {lname} ...")
             if idx >= len(maps):
                 break
             arr = np.concatenate(arrs, axis=0)
             labels = np.concatenate(lab_acc, axis=0)
-            preds = np.concatenate(pred_acc, axis=0)
-            all_ids = [sid for batch in id_acc for sid in batch]
+            preds  = np.concatenate(pred_acc, axis=0)
+            all_ids= [sid for batch in id_acc for sid in batch]
             cur_map = maps[idx]
-            cols = list(cur_map.index) if cur_map.shape[0] == arr.shape[1] else list(cur_map.columns)
+            cols = list(cur_map.index) if cur_map.shape[0]==arr.shape[1] else list(cur_map.columns)
             df = pd.DataFrame(arr, columns=cols)
-            df["label"] = labels
-            df["prediction"] = preds
-            df["sample_id"] = all_ids
+            df['label'] = labels
+            df['prediction'] = preds
+            df['sample_id'] = all_ids
             out_fp = explain_root / f"PNet_{method}_L{tgt}_layer{idx}_test.csv"
             df.to_csv(out_fp, index=False)
     print(f"Saved raw importances for {method}")

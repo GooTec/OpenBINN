@@ -1,28 +1,20 @@
 #!/bin/bash
-# Run experiment1.py with slurm using the openBINN environment.
-# Usage: bash run_slurm_experiment1.sh --device gpu
+#SBATCH -J experiment1
+#SBATCH -p gpu
+#SBATCH --gres=gpu:A4000:1
+#SBATCH --time=50:00:00
+#SBATCH --output=exp1-%j.out
+#SBATCH --error=exp1-%j.err
 
-set -e
+# 1) 환경 초기화
+source ~/.bashrc          # 여기까지는 -u 없이
 
-PY="$HOME/.conda/envs/openBINN/bin/python"
-DEVICE="gpu"
-EXP_NUM=1
+# 2) 엄격 모드 ON
+set -euxo pipefail        # 이제부터 unbound 변수 검사
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --device)
-      DEVICE="$2"; shift 2;;
-    --exp)
-      EXP_NUM="$2"; shift 2;;
-    *) echo "Unknown option $1"; exit 1;;
-  esac
-done
+# 3) Conda 환경
+conda activate openBINN
+which python              # 경로 확인(디버그용)
 
-if [[ "$DEVICE" == "gpu" ]]; then
-  SRUN_PREFIX="srun --gres=gpu:A4000 -p gpu --time=50:00:00"
-else
-  SRUN_PREFIX="srun --time=50:00:00"
-fi
-
-$SRUN_PREFIX "$PY" analysis/experiment1.py --exp "$EXP_NUM"
-
+# 4) 실행
+python experiment1.py
