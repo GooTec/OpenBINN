@@ -1,3 +1,4 @@
+import argparse
 import subprocess
 from pathlib import Path
 
@@ -178,6 +179,12 @@ class ModelWrapper(torch.nn.Module):
 
 
 if __name__ == "__main__":
+    ap = argparse.ArgumentParser(description="Run experiment 1")
+    ap.add_argument("--exp", type=int, default=1, help="Experiment number")
+    args = ap.parse_args()
+
+    EXP_NUM = args.exp
+
     reactome = load_reactome_once()
     for beta in BETA_LIST:
         for gamma in GAMMA_LIST:

@@ -6,11 +6,14 @@ set -e
 
 PY="$HOME/.conda/envs/openBINN/bin/python"
 DEVICE="gpu"
+EXP_NUM=1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --device)
       DEVICE="$2"; shift 2;;
+    --exp)
+      EXP_NUM="$2"; shift 2;;
     *) echo "Unknown option $1"; exit 1;;
   esac
 done
@@ -21,5 +24,5 @@ else
   SRUN_PREFIX="srun --time=50:00:00"
 fi
 
-$SRUN_PREFIX "$PY" analysis/experiment1.py
+$SRUN_PREFIX "$PY" analysis/experiment1.py --exp "$EXP_NUM"
 
