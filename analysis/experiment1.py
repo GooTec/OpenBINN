@@ -1,3 +1,5 @@
+import argparse
+
 import sys
 from pathlib import Path
 cwd = Path.cwd()
@@ -6,9 +8,10 @@ if (cwd / 'openbinn').exists():
 elif (cwd.parent / 'openbinn').exists():
     sys.path.insert(0, str(cwd.parent))
 
-
-import subprocess
+import argparse
+import sys
 from pathlib import Path
+import subprocess
 
 import pytorch_lightning as pl
 import torch
@@ -28,32 +31,39 @@ import openbinn.experiment_utils as utils
 import numpy as np
 import pandas as pd
 
+cwd = Path.cwd()
+if (cwd / 'openbinn').exists():
+    sys.path.insert(0, str(cwd))
+elif (cwd.parent / 'openbinn').exists():
+    sys.path.insert(0, str(cwd.parent))
 
-BETA_LIST = [0.5]
-GAMMA_LIST = [0.5]
+BETA_LIST = [0.5, 1.0, 2.0, 4.0]
+GAMMA_LIST = [0.5, 1.0, 2.0, 4.0]
 METHODS = ["deeplift", "ig", "gradshap", "itg", "shap"]
 
+class ModelWrapper(torch.nn.Module):
+    def __init__(self, model: PNet, target_layer: int):
+        super().__init__()
+        self.model = model
+        self.print_layer = target_layer
+        self.target_layer = target_layer
 
-
+    def forward(self, x):
+        outs = self.model(x)
+        return outs[self.target_layer - 1]
 
 def generate(beta: float, gamma: float) -> None:
-    """Generate a single simulation dataset for the given parameters."""
     subprocess.run(
         [
             "python",
             "generate_simulations.py",
-            "--beta",
-            str(beta),
-            "--gamma",
-            str(gamma),
-            "--n_sim",
-            "1",
-            "--exp",
-            str(EXP_NUM),
+            "--beta", str(beta),
+            "--gamma", str(gamma),
+            "--n_sim", "1",
+            "--exp", str(EXP_NUM),
         ],
         check=True,
     )
-
 
 def load_reactome_once():
     return ReactomeNetwork(
@@ -64,7 +74,6 @@ def load_reactome_once():
             pathway_genes_file_name="SimulationPathways.gmt",
         )
     )
-
 
 def train_dataset(data_dir: Path, results_dir: Path, reactome):
     ds = PnetSimDataSet(root=str(data_dir), num_features=3)
@@ -81,18 +90,8 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
         add_unk_genes=False,
     )
     ds.node_index = [g for g in ds.node_index if g in maps[0].index]
-    tr_loader = GeoLoader(
-        ds,
-        16,
-        sampler=SubsetRandomSampler(ds.train_idx),
-        num_workers=0,
-    )
-    va_loader = GeoLoader(
-        ds,
-        16,
-        sampler=SubsetRandomSampler(ds.valid_idx),
-        num_workers=0,
-    )
+    tr_loader = GeoLoader(ds, 16, sampler=SubsetRandomSampler(ds.train_idx), num_workers=0)
+    va_loader = GeoLoader(ds, 16, sampler=SubsetRandomSampler(ds.valid_idx), num_workers=0)
     model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=1e-3)
     trainer = pl.Trainer(
         accelerator="auto",
@@ -107,22 +106,28 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
     torch.save(model.state_dict(), results_dir / "optimal" / "trained_model.pth")
     return maps
 
-
 def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: str):
     ds = PnetSimExpDataSet(root=str(data_dir), num_features=1)
     ds.split_index_by_file(
-        train_fp=scen_dir/'splits'/'training_set_0.csv',
-        valid_fp=scen_dir/'splits'/'validation_set.csv',
-        test_fp =scen_dir/'splits'/'test_set.csv',
+        train_fp=data_dir / 'splits' / 'training_set_0.csv',
+        valid_fp=data_dir / 'splits' / 'validation_set.csv',
+        test_fp = data_dir / 'splits' / 'test_set.csv',
     )
-    maps = get_layer_maps(genes=list(ds.node_index), reactome=reactome, n_levels=3, direction='root_to_leaf', add_unk_genes=False)
+    maps = get_layer_maps(
+        genes=list(ds.node_index),
+        reactome=reactome,
+        n_levels=3,
+        direction='root_to_leaf',
+        add_unk_genes=False
+    )
     ds.node_index = [g for g in ds.node_index if g in maps[0].index]
     model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=0.001)
-    state = torch.load(scen_dir/'results'/'optimal'/'trained_model.pth', map_location='cpu')
+    state = torch.load(results_dir / 'optimal' / 'trained_model.pth', map_location='cpu')
     model.load_state_dict(state); model.eval()
     loader = GeoLoader(ds, batch_size=len(ds.test_idx), sampler=SubsetRandomSampler(ds.test_idx), num_workers=0)
-    explain_root = scen_dir/'explanations'
+    explain_root = results_dir / 'explanations'
     explain_root.mkdir(exist_ok=True)
+
     print("#samples in ds         :", len(ds))
     print("#test-indices in ds    :", len(ds.test_idx))
     print("first 10 test-idx      :", ds.test_idx[:10])
@@ -140,6 +145,7 @@ def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: s
             lab_acc.append(y.cpu().numpy())
             pred_acc.append(wrap(X).detach().cpu().numpy())
             id_acc.append(ids)
+
         print(len(expl_acc), "explanations found for", method)
         for idx, (lname, arrs) in enumerate(expl_acc.items()):
             print(f"Saving {method} layer {tgt} explanation for {lname} ...")
@@ -159,28 +165,10 @@ def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: s
             df.to_csv(out_fp, index=False)
     print(f"Saved raw importances for {method}")
 
-
-class ModelWrapper(torch.nn.Module):
-    def __init__(self, model: PNet, target_layer: int):
-        super().__init__()
-        self.model = model
-        # openbinn explainers look for ``print_layer`` on the wrapped model to
-        # determine which intermediate layer's output should be returned.  When
-        # not present the explainers fall back to ``0`` which ends up skipping
-        # every layer and therefore yields an empty explanation dictionary.
-        self.print_layer = target_layer
-        self.target_layer = target_layer
-
-    def forward(self, x):
-        outs = self.model(x)
-        return outs[self.target_layer - 1]
-
-
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Run experiment 1")
     ap.add_argument("--exp", type=int, default=1, help="Experiment number")
     args = ap.parse_args()
-
     EXP_NUM = args.exp
 
     reactome = load_reactome_once()
@@ -193,4 +181,3 @@ if __name__ == "__main__":
             maps = train_dataset(data_dir, results_dir, reactome)
             for method in METHODS:
                 explain_dataset(data_dir, results_dir, reactome, maps, method)
-
