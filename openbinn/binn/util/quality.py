@@ -58,7 +58,13 @@ def get_roc(
                     output = output[-1].cpu().numpy()
                 ## Or average over all
                 else:
-                    output = np.mean(np.array(output),axis=0)
+                    # `output` can be a list of tensors on GPU. Move each to CPU
+                    # before calculating the mean to avoid device mismatch
+                    output = (
+                        torch.stack([o.detach().to("cpu") for o in output])
+                        .mean(dim=0)
+                        .numpy()
+                    )
             else:
                 output = output.cpu().numpy()
                 

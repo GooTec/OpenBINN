@@ -2,15 +2,6 @@ import argparse
 
 import sys
 from pathlib import Path
-cwd = Path.cwd()
-if (cwd / 'openbinn').exists():
-    sys.path.insert(0, str(cwd))
-elif (cwd.parent / 'openbinn').exists():
-    sys.path.insert(0, str(cwd.parent))
-
-import argparse
-import sys
-from pathlib import Path
 import subprocess
 
 import pytorch_lightning as pl
