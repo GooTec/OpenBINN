@@ -29,11 +29,15 @@ import openbinn.experiment_utils as utils
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import json
+import shutil
 
 
 BETA_LIST = [0.5, 1.0, 2.0, 4.0]
 GAMMA_LIST = [0.5, 1.0, 2.0, 4.0]
 METHODS = ["deeplift", "ig", "gradshap", "itg", "shap"]
+LR_LIST = [1e-3, 5e-4, 1e-4]
+BATCH_LIST = [16, 32]
 
 class ModelWrapper(torch.nn.Module):
     def __init__(self, model: PNet, target_layer: int):
@@ -84,12 +88,13 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
         add_unk_genes=False,
     )
     ds.node_index = [g for g in ds.node_index if g in maps[0].index]
-    tr_loader = GeoLoader(ds, 16, sampler=SubsetRandomSampler(ds.train_idx), num_workers=0)
-    va_loader = GeoLoader(ds, 16, sampler=SubsetRandomSampler(ds.valid_idx), num_workers=0)
-    te_loader = GeoLoader(ds, 16, sampler=SubsetRandomSampler(ds.test_idx), num_workers=0)
 
     class PerfCallback(pl.Callback):
-        def __init__(self, period: int = 10):
+        def __init__(self, out_dir: Path, tr_loader, va_loader, te_loader, period: int = 10):
+            self.out_dir = out_dir
+            self.tr_loader = tr_loader
+            self.va_loader = va_loader
+            self.te_loader = te_loader
             self.period = period
             self.records = []
 
@@ -112,12 +117,12 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
         def on_validation_epoch_end(self, trainer, pl_module):
             epoch = trainer.current_epoch + 1
             if epoch % self.period == 0 or epoch == trainer.max_epochs:
-                tr_auc = get_roc(pl_module, tr_loader, exp=False)[2]
-                va_auc = get_roc(pl_module, va_loader, exp=False)[2]
-                te_auc = get_roc(pl_module, te_loader, exp=False)[2]
-                tr_loss, tr_acc = self._compute_loss_acc(pl_module, tr_loader)
-                va_loss, va_acc = self._compute_loss_acc(pl_module, va_loader)
-                te_loss, te_acc = self._compute_loss_acc(pl_module, te_loader)
+                tr_auc = get_roc(pl_module, self.tr_loader, exp=False)[2]
+                va_auc = get_roc(pl_module, self.va_loader, exp=False)[2]
+                te_auc = get_roc(pl_module, self.te_loader, exp=False)[2]
+                tr_loss, tr_acc = self._compute_loss_acc(pl_module, self.tr_loader)
+                va_loss, va_acc = self._compute_loss_acc(pl_module, self.va_loader)
+                te_loss, te_acc = self._compute_loss_acc(pl_module, self.te_loader)
                 self.records.append(
                     {
                         "epoch": int(epoch),
@@ -133,10 +138,10 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
                     }
                 )
                 df = pd.DataFrame(self.records)
-                perf_dir = results_dir / "performance"
+                perf_dir = self.out_dir / "performance"
                 perf_dir.mkdir(parents=True, exist_ok=True)
                 df.to_csv(perf_dir / "metrics.csv", index=False)
-                vis_dir = results_dir / "visualize"
+                vis_dir = self.out_dir / "visualize"
                 vis_dir.mkdir(parents=True, exist_ok=True)
                 plt.figure()
                 plt.plot(df["epoch"], df["train_loss"], label="train")
@@ -171,22 +176,94 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
                 plt.savefig(vis_dir / "auc_curve.png")
                 plt.close()
 
-    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=1e-3)
-    trainer = pl.Trainer(
-        accelerator="auto",
-        deterministic=True,
-        max_epochs=200,
-        callbacks=[
-            pl.callbacks.EarlyStopping("val_loss", patience=10, mode="min", verbose=False, min_delta=0.01),
-            PerfCallback(period=10),
-            ModelCheckpoint(dirpath=results_dir/"checkpoints", monitor="val_loss", mode="min", save_top_k=1, every_n_epochs=10, save_last=True),
-        ],
-        logger=InMemoryLogger(),
-        enable_progress_bar=False,
-    )
-    trainer.fit(model, tr_loader, va_loader)
+    best_score = float("inf")
+    best_state = None
+    best_params = None
+    best_tmp_dir = None
+
+    for lr in LR_LIST:
+        for bs in BATCH_LIST:
+            run_dir = results_dir / f"lr{lr}_bs{bs}"
+            tr_loader = GeoLoader(
+                ds,
+                bs,
+                sampler=SubsetRandomSampler(ds.train_idx),
+                num_workers=0,
+            )
+            va_loader = GeoLoader(
+                ds,
+                bs,
+                sampler=SubsetRandomSampler(ds.valid_idx),
+                num_workers=0,
+            )
+            te_loader = GeoLoader(
+                ds,
+                bs,
+                sampler=SubsetRandomSampler(ds.test_idx),
+                num_workers=0,
+            )
+
+            callback = PerfCallback(run_dir, tr_loader, va_loader, te_loader, period=10)
+            mc = ModelCheckpoint(
+                dirpath=run_dir / "checkpoints",
+                monitor="val_loss",
+                mode="min",
+                save_top_k=1,
+                every_n_epochs=10,
+                save_last=True,
+            )
+            model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=lr)
+            trainer = pl.Trainer(
+                accelerator="auto",
+                deterministic=True,
+                max_epochs=200,
+                callbacks=[
+                    pl.callbacks.EarlyStopping(
+                        "val_loss",
+                        patience=10,
+                        mode="min",
+                        verbose=False,
+                        min_delta=0.01,
+                    ),
+                    callback,
+                    mc,
+                ],
+                logger=InMemoryLogger(),
+                enable_progress_bar=False,
+            )
+
+            trainer.fit(model, tr_loader, va_loader)
+
+            if mc.best_model_score is not None:
+                score = mc.best_model_score.item()
+                if score < best_score:
+                    best_score = score
+                    best_state = torch.load(mc.best_model_path, map_location="cpu")
+                    best_params = {"learning_rate": lr, "batch_size": bs}
+                    best_tmp_dir = run_dir
+
+    if best_state is None:
+        raise RuntimeError("Hyperparameter search failed to produce a model")
+
     (results_dir / "optimal").mkdir(parents=True, exist_ok=True)
-    torch.save(model.state_dict(), results_dir / "optimal" / "trained_model.pth")
+    torch.save(best_state, results_dir / "optimal" / "trained_model.pth")
+    with open(results_dir / "optimal" / "best_params.json", "w") as f:
+        json.dump(best_params, f)
+
+    if best_tmp_dir and best_tmp_dir != results_dir:
+        src_perf = best_tmp_dir / "performance"
+        src_vis = best_tmp_dir / "visualize"
+        if src_perf.exists():
+            dst_perf = results_dir / "performance"
+            if dst_perf.exists():
+                shutil.rmtree(dst_perf)
+            shutil.copytree(src_perf, dst_perf)
+        if src_vis.exists():
+            dst_vis = results_dir / "visualize"
+            if dst_vis.exists():
+                shutil.rmtree(dst_vis)
+            shutil.copytree(src_vis, dst_vis)
+
     return maps
 
 def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: str):
