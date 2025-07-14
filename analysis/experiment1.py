@@ -239,6 +239,8 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
                 if score < best_score:
                     best_score = score
                     best_state = torch.load(mc.best_model_path, map_location="cpu")
+                    if isinstance(best_state, dict) and "state_dict" in best_state:
+                        best_state = best_state["state_dict"]
                     best_params = {"learning_rate": lr, "batch_size": bs}
                     best_tmp_dir = run_dir
 
@@ -283,7 +285,10 @@ def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: s
     ds.node_index = [g for g in ds.node_index if g in maps[0].index]
     model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=0.001)
     state = torch.load(results_dir / 'optimal' / 'trained_model.pth', map_location='cpu')
-    model.load_state_dict(state); model.eval()
+    if isinstance(state, dict) and 'state_dict' in state:
+        state = state['state_dict']
+    model.load_state_dict(state)
+    model.eval()
     loader = GeoLoader(ds, batch_size=len(ds.test_idx), sampler=SubsetRandomSampler(ds.test_idx), num_workers=0)
     explain_root = results_dir / 'explanations'
     explain_root.mkdir(exist_ok=True)
