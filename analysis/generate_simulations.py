@@ -3,7 +3,8 @@
 """generate_simulations.py
 Generate simple simulation datasets and their bootstrap/gene-permutation/
 label-permutation variants. The datasets are stored under
-``data/b{beta}_g{gamma}/{sim}``.
+``data/experiment{exp}/b{beta}_g{gamma}/{sim}`` if ``--exp`` is provided,
+otherwise ``data/b{beta}_g{gamma}/{sim}``.
 This script is intentionally lightweight and does not replicate the full
 simulation procedures used in the original project, but provides minimal
 placeholders compatible with the training scripts.
@@ -107,13 +108,18 @@ def main():
                     help="Start index of simulation (inclusive)")
     ap.add_argument("--end_sim", type=int,
                     help="End index of simulation (inclusive). Defaults to n_sim")
+    ap.add_argument("--exp", type=int, default=None,
+                    help="Experiment number to store data under")
     args = ap.parse_args()
 
     end = args.end_sim if args.end_sim is not None else args.n_sim
     if end < args.start_sim:
         raise ValueError("end_sim must be >= start_sim")
 
-    data_root = Path(f"./data/b{args.beta}_g{args.gamma}")
+    data_root = Path("./data")
+    if args.exp is not None:
+        data_root = data_root / f"experiment{args.exp}"
+    data_root = data_root / f"b{args.beta}_g{args.gamma}"
     for i in range(args.start_sim, end + 1):
         generate_single(data_root / f"{i}", args.beta, args.gamma, seed=42 + i)
     print(f"✓ generated simulations at {data_root}")
