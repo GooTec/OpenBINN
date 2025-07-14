@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 
+EXP_NUM = 1
 BETA_LIST = [0.0, 0.5, 1.0, 1.5, 2.0]
 GAMMA_LIST = [0.0, 0.5, 1.0, 2.0]
 METHODS = ["deeplift", "ig", "gradshap", "itg", "shap"]
@@ -40,6 +41,8 @@ def generate(beta: float, gamma: float) -> None:
             str(gamma),
             "--n_sim",
             "1",
+            "--exp",
+            str(EXP_NUM),
         ],
         check=True,
     )
@@ -56,12 +59,12 @@ def load_reactome_once():
     )
 
 
-def train_dataset(scen_dir: Path, reactome):
-    ds = PnetSimDataSet(root=str(scen_dir), num_features=3)
+def train_dataset(data_dir: Path, results_dir: Path, reactome):
+    ds = PnetSimDataSet(root=str(data_dir), num_features=3)
     ds.split_index_by_file(
-        train_fp=scen_dir / "splits" / "training_set_0.csv",
-        valid_fp=scen_dir / "splits" / "validation_set.csv",
-        test_fp=scen_dir / "splits" / "test_set.csv",
+        train_fp=data_dir / "splits" / "training_set_0.csv",
+        valid_fp=data_dir / "splits" / "validation_set.csv",
+        test_fp=data_dir / "splits" / "test_set.csv",
     )
     maps = get_layer_maps(
         genes=list(ds.node_index),
@@ -93,17 +96,17 @@ def train_dataset(scen_dir: Path, reactome):
         enable_progress_bar=False,
     )
     trainer.fit(model, tr_loader, va_loader)
-    (scen_dir / "results" / "optimal").mkdir(parents=True, exist_ok=True)
-    torch.save(model.state_dict(), scen_dir / "results" / "optimal" / "trained_model.pth")
+    (results_dir / "optimal").mkdir(parents=True, exist_ok=True)
+    torch.save(model.state_dict(), results_dir / "optimal" / "trained_model.pth")
     return maps
 
 
-def explain_dataset(scen_dir: Path, reactome, maps, method: str):
-    ds = PnetSimExpDataSet(root=str(scen_dir), num_features=1)
+def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: str):
+    ds = PnetSimExpDataSet(root=str(data_dir), num_features=1)
     ds.split_index_by_file(
-        train_fp=scen_dir / "splits" / "training_set_0.csv",
-        valid_fp=scen_dir / "splits" / "validation_set.csv",
-        test_fp=scen_dir / "splits" / "test_set.csv",
+        train_fp=data_dir / "splits" / "training_set_0.csv",
+        valid_fp=data_dir / "splits" / "validation_set.csv",
+        test_fp=data_dir / "splits" / "test_set.csv",
     )
     maps = get_layer_maps(
         genes=list(ds.node_index),
@@ -114,7 +117,7 @@ def explain_dataset(scen_dir: Path, reactome, maps, method: str):
     )
     ds.node_index = [g for g in ds.node_index if g in maps[0].index]
     model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=0.001)
-    state = torch.load(scen_dir / "results" / "optimal" / "trained_model.pth", map_location="cpu")
+    state = torch.load(results_dir / "optimal" / "trained_model.pth", map_location="cpu")
     model.load_state_dict(state)
     model.eval()
     loader = GeoLoader(
@@ -123,7 +126,7 @@ def explain_dataset(scen_dir: Path, reactome, maps, method: str):
         sampler=SubsetRandomSampler(ds.test_idx),
         num_workers=0,
     )
-    explain_root = scen_dir / "explanations"
+    explain_root = results_dir / "explanations"
     explain_root.mkdir(exist_ok=True)
     for tgt in range(1, len(maps) + 1):
         wrap = ModelWrapper(model, tgt)
@@ -179,8 +182,10 @@ if __name__ == "__main__":
     for beta in BETA_LIST:
         for gamma in GAMMA_LIST:
             generate(beta, gamma)
-            scenario = Path("data") / f"b{beta}_g{gamma}" / "1"
-            maps = train_dataset(scenario, reactome)
+            scenario_id = Path(f"b{beta}_g{gamma}") / "1"
+            data_dir = Path("data") / f"experiment{EXP_NUM}" / scenario_id
+            results_dir = Path("results") / f"experiment{EXP_NUM}" / scenario_id
+            maps = train_dataset(data_dir, results_dir, reactome)
             for method in METHODS:
-                explain_dataset(scenario, reactome, maps, method)
+                explain_dataset(data_dir, results_dir, reactome, maps, method)
 
