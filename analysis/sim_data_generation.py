@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_curve, auc
+from scipy.special import expit
 
 # ────────── 파라미터 ──────────
 RNG_BASE_SEED = 42
@@ -61,6 +62,31 @@ alpha  = np.ones(X_true.shape[1])
 
 SELECTED_GENES_TXT = "genes\n" + "\n".join(mutation.columns)
 
+# ────────── (1b) Pathway helpers ──────────
+def independent_paths(all_paths, thr: float = 0.2):
+    """Return pathway IDs with mean Jaccard similarity < thr."""
+    def jacc(a, b):
+        a, b = set(a), set(b)
+        return len(a & b) / len(a | b) if (a | b) else 1.0
+
+    keep = []
+    for p, genes in all_paths.items():
+        sims = [jacc(genes, all_paths[o]) for o in all_paths if o != p]
+        if sims and np.mean(sims) < thr:
+            keep.append(p)
+    return keep
+
+
+def calibrate_intercept(eta: np.ndarray, prev: float) -> float:
+    lo, hi = -20, 20
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        if expit(eta + mid).mean() > prev:
+            hi = mid
+        else:
+            lo = mid
+    return mid
+
 # ────────── (2) 헬퍼 ──────────
 def save_triplet(dst: Path, Xm, Xc, y):
     """
@@ -108,15 +134,48 @@ def make_label_perm(Xm, Xc, y, rng):
     yp = pd.Series(rng.permutation(y.values), index=y.index, name="response")
     return Xm, Xc, yp
 
-def main(start_sim: int = 1, end_sim: int = N_SIM):
+def main(start_sim: int = 1, end_sim: int = N_SIM, *,
+         pathway_nonlinear: bool = False, alpha_sigma: float = 20.0,
+         prev: float = 0.5):
     print("▶ Generating simulations & variants …")
+    indep = independent_paths(pathways)
     for i in range(start_sim, end_sim + 1):
         rng_sim = np.random.RandomState(RNG_BASE_SEED + i)
-        S   = X_true.values @ alpha
-        eta = (BETA*S + GAMMA*S**2) + DELTAS[0]*(BETA*S + GAMMA*S**2) \
-            +  DELTAS[1]*DELTAS[0]*(BETA*S + GAMMA*S**2)
-        p   = 1/(1+np.exp(-eta))
-        y   = pd.Series(rng_sim.binomial(1, p), index=X_true.index, name="response")
+
+        if pathway_nonlinear:
+            true_p = rng_sim.choice(indep, 1)[0]
+            nulls = list(rng_sim.choice([p for p in indep if p != true_p], 2, replace=False))
+            pool = [true_p] + nulls
+
+            genes = sorted({g for p in pool for g in pathways[p] if g in mutation.columns})
+            Xm_sel = mutation[genes]
+
+            a = {g: (rng_sim.normal(0, alpha_sigma) if g in pathways[true_p] else 0.0)
+                 for g in genes}
+            a_vec = np.array([a[g] for g in genes])
+            additive = Xm_sel.values.dot(a_vec)
+
+            tg = [g for g in genes if g in pathways[true_p]]
+            if len(tg) >= 2:
+                g1, g2 = rng_sim.choice(tg, 2, replace=False)
+                mult = Xm_sel[g1].values * Xm_sel[g2].values
+                OR = np.maximum(Xm_sel[g1].values, Xm_sel[g2].values)
+                AND = np.minimum(Xm_sel[g1].values, Xm_sel[g2].values)
+            else:
+                mult = OR = AND = np.zeros(len(Xm_sel))
+
+            w = rng_sim.uniform(size=4)
+            eta = w[0] * additive + w[1] * mult + w[2] * OR + w[3] * AND
+            c = calibrate_intercept(eta, prev)
+            p = expit(eta + c)
+            y = pd.Series(rng_sim.binomial(1, p), index=Xm_sel.index, name="response")
+        else:
+            S = X_true.values @ alpha
+            eta = (BETA * S + GAMMA * S**2) + DELTAS[0] * (BETA * S + GAMMA * S**2) \
+                + DELTAS[1] * DELTAS[0] * (BETA * S + GAMMA * S**2)
+            p = 1 / (1 + np.exp(-eta))
+            y = pd.Series(rng_sim.binomial(1, p), index=X_true.index, name="response")
+            Xm_sel = mutation
 
         sim_dir = OUT_ROOT / f"b{BETA}_g{GAMMA}" / f"{i}"
         save_triplet(sim_dir, mutation, cnv_aligned, y)
@@ -169,7 +228,16 @@ if __name__ == "__main__":
                         help="Start index of simulation (inclusive)")
     parser.add_argument("--end_sim", type=int, default=N_SIM,
                         help="End index of simulation (inclusive)")
+    parser.add_argument("--pathway_nonlinear", action="store_true",
+                        help="Use pathway-based nonlinear outcome generation")
+    parser.add_argument("--alpha_sigma", type=float, default=20.0,
+                        help="Stddev of gene coefficients for true pathway")
+    parser.add_argument("--prev", type=float, default=0.5,
+                        help="Target prevalence when calibrating intercept")
     args = parser.parse_args()
     BETA = args.beta
     GAMMA = args.gamma
-    main(args.start_sim, args.end_sim)
+    main(args.start_sim, args.end_sim,
+         pathway_nonlinear=args.pathway_nonlinear,
+         alpha_sigma=args.alpha_sigma,
+         prev=args.prev)
