@@ -65,8 +65,19 @@ def generate_single(out_dir: Path, beta: float, gamma: float, seed: int):
     pd.DataFrame({"gene": genes, "alpha": rng.normal(0, 1, size=N_GENES)}).to_csv(out_dir / "gene_alpha.csv", index=False)
     pd.DataFrame({"pathway": [f"p{i+1}" for i in range(len(active))], "beta": rng.normal(beta, 1, size=len(active))}).to_csv(out_dir / "pathway_beta.csv", index=False)
 
-    tr, temp = train_test_split(dfX.index, train_size=0.8, random_state=seed)
-    va, te = train_test_split(temp, train_size=0.5, random_state=seed)
+    # stratified splits to maintain consistent outcome distribution across sets
+    tr, temp = train_test_split(
+        dfX.index,
+        train_size=0.8,
+        random_state=seed,
+        stratify=dfy,
+    )
+    va, te = train_test_split(
+        temp,
+        train_size=0.5,
+        random_state=seed,
+        stratify=dfy.loc[temp],
+    )
 
     sp = out_dir / "splits"
     sp.mkdir(exist_ok=True)
