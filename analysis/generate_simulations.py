@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from scipy.special import expit
 
 N_SIM = 100
 N_VARIANTS = 100
@@ -42,28 +43,88 @@ def label_permutation(y: pd.Series, rng: np.random.RandomState):
     return yp
 
 
-def generate_single(out_dir: Path, beta: float, gamma: float, seed: int):
+def calibrate_intercept(eta: np.ndarray, prev: float) -> float:
+    """Binary intercept calibration for desired prevalence."""
+    lo, hi = -20, 20
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        if expit(eta + mid).mean() > prev:
+            hi = mid
+        else:
+            lo = mid
+    return mid
+
+
+def generate_single(
+    out_dir: Path,
+    beta: float,
+    gamma: float,
+    seed: int,
+    *,
+    pathway_nonlinear: bool = False,
+    alpha_sigma: float = 1.0,
+    prev: float = 0.5,
+):
     rng = np.random.RandomState(seed)
     genes = [f"g{i+1}" for i in range(N_GENES)]
 
     X = rng.normal(0, 1, size=(N_SAMPLES, N_GENES))
-    coefs = np.zeros(N_GENES)
-    active = rng.choice(N_GENES, size=N_GENES // 2, replace=False)
-    coefs[active] = rng.normal(beta, 0.1, size=len(active))
-    eta = X.dot(coefs) + gamma
-    p = 1 / (1 + np.exp(-eta))
-    y = (rng.rand(N_SAMPLES) < p).astype(int)
-
     dfX = pd.DataFrame(X, columns=genes)
     dfX.index.name = "id"
-    dfy = pd.Series(y, index=dfX.index, name="response")
+
+    if pathway_nonlinear:
+        true_sz = min(5, N_GENES)
+        true_genes = rng.choice(genes, size=true_sz, replace=False)
+        remaining = [g for g in genes if g not in true_genes]
+        null1 = rng.choice(remaining, size=min(true_sz, len(remaining)), replace=False)
+        remaining = [g for g in remaining if g not in null1]
+        null2 = rng.choice(remaining, size=min(true_sz, len(remaining)), replace=False)
+
+        alpha = {g: (rng.normal(0, alpha_sigma) if g in true_genes else 0.0) for g in genes}
+        a_vec = np.array([alpha[g] for g in genes])
+        additive = dfX.values.dot(a_vec)
+
+        if len(true_genes) >= 2:
+            g1, g2 = rng.choice(true_genes, 2, replace=False)
+            mult = dfX[g1].values * dfX[g2].values
+            OR = np.maximum(dfX[g1].values, dfX[g2].values)
+            AND = np.minimum(dfX[g1].values, dfX[g2].values)
+        else:
+            mult = OR = AND = np.zeros(len(dfX))
+
+        w = rng.uniform(size=4)
+        eta = w[0] * additive + w[1] * mult + w[2] * OR + w[3] * AND
+        c = calibrate_intercept(eta, prev)
+        prob = expit(eta + c)
+        y = rng.binomial(1, prob)
+        dfy = pd.Series(y, index=dfX.index, name="response")
+        pathway_beta = pd.DataFrame(
+            {"pathway": ["p_true", "p_null1", "p_null2"], "beta": [1.0, 0.0, 0.0]}
+        )
+    else:
+        coefs = np.zeros(N_GENES)
+        active = rng.choice(N_GENES, size=N_GENES // 2, replace=False)
+        coefs[active] = rng.normal(beta, 0.1, size=len(active))
+        eta = dfX.values.dot(coefs) + gamma
+        prob = expit(eta)
+        y = (rng.rand(N_SAMPLES) < prob).astype(int)
+        dfy = pd.Series(y, index=dfX.index, name="response")
+        alpha = {g: coefs[i] for i, g in enumerate(genes)}
+        pathway_beta = pd.DataFrame(
+            {
+                "pathway": [f"p{i+1}" for i in range(len(active))],
+                "beta": rng.normal(beta, 1, size=len(active)),
+            }
+        )
 
     out_dir.mkdir(parents=True, exist_ok=True)
     dfX.to_csv(out_dir / "somatic_mutation_paper.csv")
     dfy.to_frame().to_csv(out_dir / "response.csv", index=True)
     pd.Series(genes, name="genes").to_csv(out_dir / "selected_genes.csv", index=False)
-    pd.DataFrame({"gene": genes, "alpha": rng.normal(0, 1, size=N_GENES)}).to_csv(out_dir / "gene_alpha.csv", index=False)
-    pd.DataFrame({"pathway": [f"p{i+1}" for i in range(len(active))], "beta": rng.normal(beta, 1, size=len(active))}).to_csv(out_dir / "pathway_beta.csv", index=False)
+    pd.DataFrame({"gene": genes, "alpha": [alpha.get(g, 0.0) for g in genes]}).to_csv(
+        out_dir / "gene_alpha.csv", index=False
+    )
+    pathway_beta.to_csv(out_dir / "pathway_beta.csv", index=False)
 
     # stratified splits to maintain consistent outcome distribution across sets
     tr, temp = train_test_split(
@@ -121,6 +182,12 @@ def main():
                     help="End index of simulation (inclusive). Defaults to n_sim")
     ap.add_argument("--exp", type=int, default=None,
                     help="Experiment number to store data under")
+    ap.add_argument("--pathway_nonlinear", action="store_true",
+                    help="Use pathway-driven nonlinear outcome")
+    ap.add_argument("--alpha_sigma", type=float, default=1.0,
+                    help="Stddev for gene coefficients of the true pathway")
+    ap.add_argument("--prev", type=float, default=0.5,
+                    help="Desired prevalence when calibrating intercept")
     args = ap.parse_args()
 
     end = args.end_sim if args.end_sim is not None else args.n_sim
@@ -132,7 +199,15 @@ def main():
         data_root = data_root / f"experiment{args.exp}"
     data_root = data_root / f"b{args.beta}_g{args.gamma}"
     for i in range(args.start_sim, end + 1):
-        generate_single(data_root / f"{i}", args.beta, args.gamma, seed=42 + i)
+        generate_single(
+            data_root / f"{i}",
+            args.beta,
+            args.gamma,
+            seed=42 + i,
+            pathway_nonlinear=args.pathway_nonlinear,
+            alpha_sigma=args.alpha_sigma,
+            prev=args.prev,
+        )
     print(f"✓ generated simulations at {data_root}")
 
 
