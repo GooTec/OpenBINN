@@ -124,41 +124,24 @@ def generate_single(
 
     if pathway_nonlinear:
         true_sz = min(5, N_GENES)
-        true_genes = rng.choice(genes, size=true_sz, replace=False)
+        true_genes = rng.choice(genes, size=true_sz, replace=False).tolist()
         remaining = [g for g in genes if g not in true_genes]
         null1 = rng.choice(remaining, size=min(true_sz, len(remaining)), replace=False)
         remaining = [g for g in remaining if g not in null1]
         null2 = rng.choice(remaining, size=min(true_sz, len(remaining)), replace=False)
 
-        # apply the supplied beta value directly for gene effects
-        alpha = {g: (beta if g in true_genes else 0.0) for g in genes}
-        a_vec = np.array([alpha[g] for g in genes])
-        additive = dfX.values.dot(a_vec)
+        # fixed gene weights (alpha_j = 1 for j in true pathway)
+        alpha = {g: (1.0 if g in true_genes else 0.0) for g in genes}
 
-        if len(true_genes) >= 2:
-            g1, g2 = rng.choice(true_genes, 2, replace=False)
-            mult = dfX[g1].values * dfX[g2].values
-            OR = np.maximum(dfX[g1].values, dfX[g2].values)
-            AND = np.minimum(dfX[g1].values, dfX[g2].values)
-        else:
-            mult = OR = AND = np.zeros(len(dfX))
-
-        # use supplied beta/gamma for additive and nonlinear components
-        eta = (
-            beta * additive
-            + gamma * mult
-            + gamma * OR
-            + gamma * AND
-        )
-        c = calibrate_intercept(eta, prev)
+        S = dfX[true_genes].sum(axis=1)
+        eta = beta * S + gamma * (S ** 2)
+        c = calibrate_intercept(eta.values, prev)
         prob = expit(eta + c)
         y = rng.binomial(1, prob)
         dfy = pd.Series(y, index=dfX.index, name="response")
+
         pathway_beta = pd.DataFrame(
-            {
-                "pathway": ["p_true", "p_null1", "p_null2"],
-                "beta": [gamma, 0.0, 0.0],
-            }
+            {"pathway": ["p_true", "p_null1", "p_null2"], "beta": [beta, 0.0, 0.0]}
         )
     else:
         coefs = np.zeros(N_GENES)
