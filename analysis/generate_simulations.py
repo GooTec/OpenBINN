@@ -47,17 +47,6 @@ def label_permutation(y: pd.Series, rng: np.random.RandomState):
     return yp
 
 
-def calibrate_intercept(eta: np.ndarray, prev: float) -> float:
-    """Binary intercept calibration for desired prevalence."""
-    lo, hi = -20, 20
-    for _ in range(40):
-        mid = (lo + hi) / 2
-        if expit(eta + mid).mean() > prev:
-            hi = mid
-        else:
-            lo = mid
-    return mid
-
 
 def save_visualization(
     X: pd.DataFrame,
@@ -111,8 +100,6 @@ def generate_single(
     seed: int,
     *,
     pathway_nonlinear: bool = False,
-    alpha_sigma: float = 1.0,
-    prev: float = 0.5,
 ):
     rng = np.random.RandomState(seed)
     genes = [f"g{i+1}" for i in range(N_GENES)]
@@ -135,8 +122,7 @@ def generate_single(
 
         S = dfX[true_genes].sum(axis=1)
         eta = beta * S + gamma * (S ** 2)
-        c = calibrate_intercept(eta.values, prev)
-        prob = expit(eta + c)
+        prob = expit(eta)
         y = rng.binomial(1, prob)
         dfy = pd.Series(y, index=dfX.index, name="response")
 
@@ -228,10 +214,6 @@ def main():
                     help="Experiment number to store data under")
     ap.add_argument("--pathway_nonlinear", action="store_true",
                     help="Use pathway-driven nonlinear outcome")
-    ap.add_argument("--alpha_sigma", type=float, default=1.0,
-                    help="Stddev for gene coefficients of the true pathway")
-    ap.add_argument("--prev", type=float, default=0.5,
-                    help="Desired prevalence when calibrating intercept")
     args = ap.parse_args()
 
     end = args.end_sim if args.end_sim is not None else args.n_sim
@@ -249,8 +231,6 @@ def main():
             args.gamma,
             seed=42 + i,
             pathway_nonlinear=args.pathway_nonlinear,
-            alpha_sigma=args.alpha_sigma,
-            prev=args.prev,
         )
     print(f"✓ generated simulations at {data_root}")
 

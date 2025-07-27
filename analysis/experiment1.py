@@ -39,10 +39,6 @@ METHODS = ["deeplift", "ig", "gradshap", "itg", "shap"]
 LR_LIST = [1e-3, 5e-4, 1e-4]
 BATCH_LIST = [16, 32]
 
-# simulation controls
-ALPHA_SIGMA = 20.0
-PREV = 0.5
-
 class ModelWrapper(torch.nn.Module):
     def __init__(self, model: PNet, target_layer: int):
         super().__init__()
@@ -65,7 +61,6 @@ def generate(beta: float, gamma: float, nonlinear: bool = True) -> None:
     ]
     if nonlinear:
         cmd.append("--pathway_nonlinear")
-        cmd.extend(["--alpha_sigma", str(ALPHA_SIGMA), "--prev", str(PREV)])
     subprocess.run(cmd, check=True)
 
 def load_reactome_once():
