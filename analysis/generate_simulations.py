@@ -112,12 +112,7 @@ def generate_single(
     if pathway_nonlinear:
         true_sz = min(5, N_GENES)
         true_genes = rng.choice(genes, size=true_sz, replace=False).tolist()
-        remaining = [g for g in genes if g not in true_genes]
-        null1 = rng.choice(remaining, size=min(true_sz, len(remaining)), replace=False)
-        remaining = [g for g in remaining if g not in null1]
-        null2 = rng.choice(remaining, size=min(true_sz, len(remaining)), replace=False)
 
-        # fixed gene weights (alpha_j = 1 for j in true pathway)
         alpha = {g: (1.0 if g in true_genes else 0.0) for g in genes}
 
         S = dfX[true_genes].sum(axis=1)
@@ -127,13 +122,13 @@ def generate_single(
         dfy = pd.Series(y, index=dfX.index, name="response")
 
         pathway_beta = pd.DataFrame(
-            {"pathway": ["p_true", "p_null1", "p_null2"], "beta": [beta, 0.0, 0.0]}
+            {"pathway": ["p_true"], "beta": [beta]}
         )
     else:
         coefs = np.zeros(N_GENES)
         active = rng.choice(N_GENES, size=N_GENES // 2, replace=False)
         coefs[active] = beta
-        eta = dfX.values.dot(coefs)
+        eta = dfX.values.dot(coefs) + gamma
         prob = expit(eta)
         y = (rng.rand(N_SAMPLES) < prob).astype(int)
         dfy = pd.Series(y, index=dfX.index, name="response")
@@ -141,7 +136,7 @@ def generate_single(
         pathway_beta = pd.DataFrame(
             {
                 "pathway": [f"p{i+1}" for i in range(len(active))],
-                "beta": [gamma] * len(active),
+                "beta": [beta] * len(active),
             }
         )
 
