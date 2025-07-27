@@ -59,10 +59,11 @@ python setup.py develop
    dataset into `../data/prostate/` relative to the repository.
 2. **Generate simulation datasets** (optional) using
    `python analysis/sim_data_generation.py --beta 2 --gamma 2 --pathway_nonlinear`.
-   Add `--pathway_nonlinear` to enable nonlinear gene interactions; each dataset
-   will also include a `pca_plot.png` visualizing the PCA projection and outcome
-   distribution. Adjust `--beta` and `--gamma` or omit the flag for the simpler
-   linear setup.
+   When `--pathway_nonlinear` is provided the outcome uses pathway-driven
+   interactions and each dataset includes a `pca_plot.png` showing the first two
+   principal components computed from the selected pathway genes with the
+   outcome distribution. Adjust `--beta` and `--gamma` or omit the flag for the
+   simpler linear setup.
 3. **Edit** an experiment config in `configs/`, specifying model type, dataset paths, and analysis options.
 4. **Run** training and evaluation:
 

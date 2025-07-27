@@ -57,9 +57,22 @@ def calibrate_intercept(eta: np.ndarray, prev: float) -> float:
     return mid
 
 
-def save_visualization(X: pd.DataFrame, y: pd.Series, out_path: Path) -> None:
-    """Save PCA scatter with outcome distribution."""
-    pcs = PCA(n_components=2).fit_transform(X.values)
+def save_visualization(
+    X: pd.DataFrame,
+    y: pd.Series,
+    out_path: Path,
+    *,
+    genes_subset: list[str] | None = None,
+) -> None:
+    """Save PCA scatter with outcome distribution.
+
+    If ``genes_subset`` is provided, PCA is computed using only those genes.
+    """
+    if genes_subset is not None:
+        mat = X[genes_subset].values
+    else:
+        mat = X.values
+    pcs = PCA(n_components=2).fit_transform(mat)
     fig, ax = plt.subplots(1, 2, figsize=(10, 5))
     colors = ["C0", "C1"]
     for cls in (0, 1):
@@ -105,6 +118,7 @@ def generate_single(
     X = rng.normal(0, 1, size=(N_SAMPLES, N_GENES))
     dfX = pd.DataFrame(X, columns=genes)
     dfX.index.name = "id"
+    true_genes: list[str] = []
 
     if pathway_nonlinear:
         true_sz = min(5, N_GENES)
@@ -160,7 +174,8 @@ def generate_single(
         )
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    save_visualization(dfX, dfy, out_dir / "pca_plot.png")
+    subset = true_genes if pathway_nonlinear else None
+    save_visualization(dfX, dfy, out_dir / "pca_plot.png", genes_subset=subset)
     dfX.to_csv(out_dir / "somatic_mutation_paper.csv")
     dfy.to_frame().to_csv(out_dir / "response.csv", index=True)
     pd.Series(genes, name="genes").to_csv(out_dir / "selected_genes.csv", index=False)
