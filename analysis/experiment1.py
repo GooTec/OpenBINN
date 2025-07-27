@@ -39,6 +39,10 @@ METHODS = ["deeplift", "ig", "gradshap", "itg", "shap"]
 LR_LIST = [1e-3, 5e-4, 1e-4]
 BATCH_LIST = [16, 32]
 
+# simulation controls
+ALPHA_SIGMA = 20.0
+PREV = 0.5
+
 class ModelWrapper(torch.nn.Module):
     def __init__(self, model: PNet, target_layer: int):
         super().__init__()
@@ -50,18 +54,19 @@ class ModelWrapper(torch.nn.Module):
         outs = self.model(x)
         return outs[self.target_layer - 1]
 
-def generate(beta: float, gamma: float) -> None:
-    subprocess.run(
-        [
-            "python",
-            "generate_simulations.py",
-            "--beta", str(beta),
-            "--gamma", str(gamma),
-            "--n_sim", "1",
-            "--exp", str(EXP_NUM),
-        ],
-        check=True,
-    )
+def generate(beta: float, gamma: float, nonlinear: bool = True) -> None:
+    cmd = [
+        "python",
+        "generate_simulations.py",
+        "--beta", str(beta),
+        "--gamma", str(gamma),
+        "--n_sim", "1",
+        "--exp", str(EXP_NUM),
+    ]
+    if nonlinear:
+        cmd.append("--pathway_nonlinear")
+        cmd.extend(["--alpha_sigma", str(ALPHA_SIGMA), "--prev", str(PREV)])
+    subprocess.run(cmd, check=True)
 
 def load_reactome_once():
     return ReactomeNetwork(
@@ -339,7 +344,7 @@ if __name__ == "__main__":
     reactome = load_reactome_once()
     for beta in BETA_LIST:
         for gamma in GAMMA_LIST:
-            generate(beta, gamma)
+            generate(beta, gamma, nonlinear=True)
             scenario_id = Path(f"b{beta}_g{gamma}") / "1"
             data_dir = Path("data") / f"experiment{EXP_NUM}" / scenario_id
             results_dir = Path("results") / f"experiment{EXP_NUM}" / scenario_id
