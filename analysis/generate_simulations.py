@@ -16,6 +16,8 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from scipy.special import expit
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
 
 N_SIM = 100
 N_VARIANTS = 100
@@ -55,6 +57,38 @@ def calibrate_intercept(eta: np.ndarray, prev: float) -> float:
     return mid
 
 
+def save_visualization(X: pd.DataFrame, y: pd.Series, out_path: Path) -> None:
+    """Save PCA scatter with outcome distribution."""
+    pcs = PCA(n_components=2).fit_transform(X.values)
+    fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+    colors = ["C0", "C1"]
+    for cls in (0, 1):
+        idx = y.values == cls
+        ax[0].scatter(
+            pcs[idx, 0],
+            pcs[idx, 1],
+            s=20,
+            alpha=0.6,
+            edgecolor="k",
+            c=colors[cls],
+            label=f"M={cls}",
+        )
+    ax[0].set_xlabel("PC1")
+    ax[0].set_ylabel("PC2")
+    ax[0].set_title("PCA")
+    ax[0].legend(frameon=False)
+
+    counts = y.value_counts().sort_index()
+    ax[1].bar(counts.index.astype(str), counts.values, color=[colors[int(i)] for i in counts.index])
+    ax[1].set_xlabel("y")
+    ax[1].set_ylabel("count")
+    ax[1].set_title("Outcome distribution")
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+
+
 def generate_single(
     out_dir: Path,
     beta: float,
@@ -92,20 +126,28 @@ def generate_single(
         else:
             mult = OR = AND = np.zeros(len(dfX))
 
-        w = rng.uniform(size=4)
-        eta = w[0] * additive + w[1] * mult + w[2] * OR + w[3] * AND
+        # use supplied beta/gamma for additive and nonlinear components
+        eta = (
+            beta * additive
+            + gamma * mult
+            + gamma * OR
+            + gamma * AND
+        )
         c = calibrate_intercept(eta, prev)
         prob = expit(eta + c)
         y = rng.binomial(1, prob)
         dfy = pd.Series(y, index=dfX.index, name="response")
         pathway_beta = pd.DataFrame(
-            {"pathway": ["p_true", "p_null1", "p_null2"], "beta": [1.0, 0.0, 0.0]}
+            {
+                "pathway": ["p_true", "p_null1", "p_null2"],
+                "beta": [gamma, 0.0, 0.0],
+            }
         )
     else:
         coefs = np.zeros(N_GENES)
         active = rng.choice(N_GENES, size=N_GENES // 2, replace=False)
-        coefs[active] = rng.normal(beta, 0.1, size=len(active))
-        eta = dfX.values.dot(coefs) + gamma
+        coefs[active] = beta
+        eta = dfX.values.dot(coefs)
         prob = expit(eta)
         y = (rng.rand(N_SAMPLES) < prob).astype(int)
         dfy = pd.Series(y, index=dfX.index, name="response")
@@ -113,11 +155,12 @@ def generate_single(
         pathway_beta = pd.DataFrame(
             {
                 "pathway": [f"p{i+1}" for i in range(len(active))],
-                "beta": rng.normal(beta, 1, size=len(active)),
+                "beta": [gamma] * len(active),
             }
         )
 
     out_dir.mkdir(parents=True, exist_ok=True)
+    save_visualization(dfX, dfy, out_dir / "pca_plot.png")
     dfX.to_csv(out_dir / "somatic_mutation_paper.csv")
     dfy.to_frame().to_csv(out_dir / "response.csv", index=True)
     pd.Series(genes, name="genes").to_csv(out_dir / "selected_genes.csv", index=False)
