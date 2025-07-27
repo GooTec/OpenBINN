@@ -12,11 +12,13 @@ placeholders compatible with the training scripts.
 
 import argparse
 from pathlib import Path
+from typing import List, Optional
+
 import numpy as np
 import pandas as pd
+from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split
 from scipy.special import expit
-from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 
 N_SIM = 100
@@ -62,7 +64,7 @@ def save_visualization(
     y: pd.Series,
     out_path: Path,
     *,
-    genes_subset: list[str] | None = None,
+    genes_subset: Optional[List[str]] = None,
 ) -> None:
     """Save PCA scatter with outcome distribution.
 
@@ -128,7 +130,8 @@ def generate_single(
         remaining = [g for g in remaining if g not in null1]
         null2 = rng.choice(remaining, size=min(true_sz, len(remaining)), replace=False)
 
-        alpha = {g: (rng.normal(0, alpha_sigma) if g in true_genes else 0.0) for g in genes}
+        # apply the supplied beta value directly for gene effects
+        alpha = {g: (beta if g in true_genes else 0.0) for g in genes}
         a_vec = np.array([alpha[g] for g in genes])
         additive = dfX.values.dot(a_vec)
 

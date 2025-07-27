@@ -60,10 +60,11 @@ python setup.py develop
 2. **Generate simulation datasets** (optional) using
    `python analysis/sim_data_generation.py --beta 2 --gamma 2 --pathway_nonlinear`.
    When `--pathway_nonlinear` is provided the outcome uses pathway-driven
-   interactions and each dataset includes a `pca_plot.png` showing the first two
-   principal components computed from the selected pathway genes with the
-   outcome distribution. Adjust `--beta` and `--gamma` or omit the flag for the
-   simpler linear setup.
+   interactions. Gene coefficients are fixed at the given `--beta` and
+   interaction terms are scaled by `--gamma`. Each dataset also includes a
+   `pca_plot.png` showing the first two principal components computed from the
+   selected pathway genes together with the outcome distribution. Adjust
+   `--beta` and `--gamma` or omit the flag for the simpler linear setup.
 3. **Edit** an experiment config in `configs/`, specifying model type, dataset paths, and analysis options.
 4. **Run** training and evaluation:
 
