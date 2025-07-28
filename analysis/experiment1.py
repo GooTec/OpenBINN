@@ -137,6 +137,11 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
                         "test_auc": float(te_auc),
                     }
                 )
+                print(
+                    f"Epoch {epoch:03d}: "
+                    f"train_loss={tr_loss:.4f} val_loss={va_loss:.4f} test_loss={te_loss:.4f} | "
+                    f"train_auc={tr_auc:.4f} val_auc={va_auc:.4f} test_auc={te_auc:.4f}"
+                )
                 df = pd.DataFrame(self.records)
                 perf_dir = self.out_dir / "performance"
                 perf_dir.mkdir(parents=True, exist_ok=True)
