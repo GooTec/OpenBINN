@@ -38,8 +38,8 @@ mut_df = pd.read_csv("../data/prostate/P1000_final_analysis_set_cross_important_
                      index_col=0)
 cnv_df = pd.read_csv("../data/prostate/P1000_data_CNA_paper.csv", index_col=0)
 
-cnv_del_df = cnv_df.applymap(lambda v: 1 if v == -2 else 0)
-cnv_amp_df = cnv_df.applymap(lambda v: 1 if v ==  2 else 0)
+cnv_del_df = cnv_df.eq(-2).astype(int)
+cnv_amp_df = cnv_df.eq(2).astype(int)
 
 ALL_GENES = sorted({g for genes in pathways.values() for g in genes})
 
@@ -221,6 +221,7 @@ def main(start_sim: int = 1, end_sim: int = N_SIM, *,
             diag_df = pd.DataFrame({"id": Xm_sel.index, "eta": eta, "prob": p, "response": y.values})
 
         sim_dir = OUT_ROOT / f"b{BETA}_g{GAMMA}" / f"{i}"
+        sim_dir.mkdir(parents=True, exist_ok=True)
         if pathway_nonlinear:
             genes_for_pca = list(true_genes)
         else:
