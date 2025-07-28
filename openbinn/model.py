@@ -49,7 +49,7 @@ def LoadModel(data_name: str, ml_model, pretrained: bool = True):
                 model = LogisticRegression(num_features)
             elif ml_model == 'pnet':
                 layers = [[100, 100], [100, 100], [100, 100], [100, 100], [100, 100], [100, 100]]
-                model = PNet(layers, num_features)
+                model = PNet(layers, num_features, diversity_lambda=0.1)
             model.load_state_dict(state_dict)
         else:
             raise NotImplementedError(

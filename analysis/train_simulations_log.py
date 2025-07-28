@@ -157,7 +157,8 @@ def train_dataset(
                 ds, bs, sampler=SubsetRandomSampler(ds.valid_idx), num_workers=NUM_WORKERS
             )
 
-            model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=lr)
+            model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=lr,
+                        diversity_lambda=0.1)
 
             logger = CSVLogger(save_dir=str(log_dir / "grid"), name=tag)
             trainer = pl.Trainer(
@@ -216,7 +217,8 @@ def train_dataset(
         ds, best_bs, sampler=SubsetRandomSampler(ds.test_idx), num_workers=NUM_WORKERS
     )
 
-    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=best_lr)
+    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=best_lr,
+                 diversity_lambda=0.1)
 
     logger = CSVLogger(save_dir=str(log_dir / "optimal"), name="")
 

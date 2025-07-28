@@ -146,7 +146,8 @@ def train_dataset(scen_dir: Path, reactome, best_params=None):
                                   sampler=SubsetRandomSampler(ds.valid_idx),
                                   num_workers=NUM_WORKERS)
 
-            model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=lr)
+            model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=lr,
+                        diversity_lambda=0.1)
             trainer = pl.Trainer(
                 accelerator="auto", deterministic=True, max_epochs=MAX_EPOCHS,
                 callbacks=[EarlyStopping("val_loss", patience=PATIENCE,
@@ -190,7 +191,8 @@ def train_dataset(scen_dir: Path, reactome, best_params=None):
                           sampler=SubsetRandomSampler(ds.test_idx),
                           num_workers=NUM_WORKERS)
 
-    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=best_lr)
+    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=best_lr,
+                 diversity_lambda=0.1)
     trainer = pl.Trainer(
         accelerator="auto", deterministic=True, max_epochs=MAX_EPOCHS,
         callbacks=[EarlyStopping("val_loss", patience=PATIENCE, mode="min", verbose=False, min_delta=0.01)],
