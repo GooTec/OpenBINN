@@ -180,6 +180,16 @@ def main(start_sim: int = 1, end_sim: int = N_SIM, *,
         rng_sim = np.random.RandomState(RNG_BASE_SEED + i)
 
         if pathway_nonlinear:
+            # quadratic pathway model using provided beta/gamma
+            S = X_true.values @ alpha
+            p1 = BETA * S + GAMMA * (S ** 2)
+            p2 = DELTAS[0] * p1
+            p3 = DELTAS[1] * p2
+            eta = p1 + p2 + p3
+            p = expit(eta)
+            y = pd.Series(rng_sim.binomial(1, p), index=X_true.index, name="response")
+            Xm_sel = mutation
+        else:
             true_p = rng_sim.choice(indep, 1)[0]
             nulls = list(rng_sim.choice([p for p in indep if p != true_p], 2, replace=False))
             pool = [true_p] + nulls
@@ -206,18 +216,12 @@ def main(start_sim: int = 1, end_sim: int = N_SIM, *,
             c = calibrate_intercept(eta, prev)
             p = expit(eta + c)
             y = pd.Series(rng_sim.binomial(1, p), index=Xm_sel.index, name="response")
-        else:
-            S = X_true.values @ alpha
-            eta = (BETA * S + GAMMA * S**2) + DELTAS[0] * (BETA * S + GAMMA * S**2) \
-                + DELTAS[1] * DELTAS[0] * (BETA * S + GAMMA * S**2)
-            p = 1 / (1 + np.exp(-eta))
-            y = pd.Series(rng_sim.binomial(1, p), index=X_true.index, name="response")
-            Xm_sel = mutation
 
         sim_dir = OUT_ROOT / f"b{BETA}_g{GAMMA}" / f"{i}"
-        genes_for_pca = (
-            [g for g in pathways[true_p] if g in GA.columns] if pathway_nonlinear else list(true_genes)
-        )
+        if pathway_nonlinear:
+            genes_for_pca = list(true_genes)
+        else:
+            genes_for_pca = [g for g in pathways[true_p] if g in GA.columns]
         save_visualization(GA.loc[y.index], y, sim_dir / "pca_plot.png", genes_subset=genes_for_pca)
         save_triplet(sim_dir, mutation, cnv_aligned, y)
         (sim_dir/"selected_genes.csv").write_text(SELECTED_GENES_TXT)

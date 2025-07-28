@@ -19,6 +19,9 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
 import sim_data_generation as sd
 
 
@@ -61,6 +64,36 @@ def main() -> None:
         alpha_sigma=args.alpha_sigma,
         prev=args.prev,
     )
+
+    # ╭───── Logistic regression sanity check ─────╮
+    def eval_dir(d: Path) -> None:
+        Xm = pd.read_csv(d / "somatic_mutation_paper.csv", index_col=0)
+        Xc = pd.read_csv(d / "P1000_data_CNA_paper.csv", index_col=0)
+        y = pd.read_csv(d / "response.csv", index_col=0)["response"]
+        cnv_del = Xc.applymap(lambda v: 1 if v == -2 else 0)
+        cnv_amp = Xc.applymap(lambda v: 1 if v == 2 else 0)
+        GA = 1.5 * Xm + 1.5 * cnv_del + 1.5 * cnv_amp
+        tr = pd.read_csv(d / "splits" / "training_set_0.csv", index_col=0)
+        va = pd.read_csv(d / "splits" / "validation_set.csv", index_col=0)
+        te = pd.read_csv(d / "splits" / "test_set.csv", index_col=0)
+        model = LogisticRegression(penalty="l1", solver="liblinear", max_iter=1000)
+        model.fit(GA.loc[tr["id"]], tr["response"])
+        def auc(df):
+            p = model.predict_proba(GA.loc[df["id"]])[:, 1]
+            return roc_auc_score(df["response"], p)
+        auc_tr = auc(tr)
+        auc_va = auc(va)
+        auc_te = auc(te)
+        pd.DataFrame({
+            "train_auc": [auc_tr],
+            "val_auc": [auc_va],
+            "test_auc": [auc_te],
+        }).to_csv(d / "logistic_metrics.csv", index=False)
+        print(f"  [{d.name}] train AUC={auc_tr:.3f} val AUC={auc_va:.3f} test AUC={auc_te:.3f}")
+
+    scen_root = out_root / f"b{args.beta}_g{args.gamma}"
+    for i in range(args.start_sim, end + 1):
+        eval_dir(scen_root / f"{i}")
 
 
 if __name__ == "__main__":
