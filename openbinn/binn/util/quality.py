@@ -90,7 +90,12 @@ def get_roc(
 
 
 def eval_metrics(model: torch.nn.Module, loader: Iterable) -> tuple[float, float, float]:
-    """Return average loss, accuracy and AUC for a loader."""
+    """Return average loss, accuracy and AUC for a loader.
+
+    The loss mirrors ``PNet.step`` so that recorded values match the training
+    objective, including intermediate layer weighting and optional diversity
+    penalty. Predictions for accuracy and AUC are based on the final layer.
+    """
     device = next(iter(model.parameters())).device
     model.eval()
     total_loss = 0.0
@@ -102,15 +107,17 @@ def eval_metrics(model: torch.nn.Module, loader: Iterable) -> tuple[float, float
         for x, y in loader:
             x = x.to(device)
             y = y.to(device)
+            # compute loss using the model's step function
+            out_dict = model.step((x, y), "val")
+            loss = out_dict["loss"]
+            correct += out_dict["correct"].item() if isinstance(out_dict["correct"], torch.Tensor) else out_dict["correct"]
+            total += out_dict["total"]
+            total_loss += loss.item() * out_dict["total"]
+
             out = model(x)
             if not torch.is_tensor(out):
                 out = out[-1]
             prob = out.view(-1)
-            loss = F.binary_cross_entropy(prob, y.view(-1))
-            pred = (prob > 0.5).float()
-            correct += (pred == y.view(-1)).sum().item()
-            total += len(y)
-            total_loss += loss.item() * len(y)
             all_probs.append(prob.detach().cpu())
             all_true.append(y.detach().cpu())
 
