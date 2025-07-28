@@ -2,6 +2,9 @@
 
 import torch
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from pathlib import Path
 
 from sklearn.metrics import roc_curve, auc, roc_auc_score
 import torch.nn.functional as F
@@ -150,3 +153,100 @@ class EpochMetricsPrinter(pl.Callback):
             f"train_loss={tr_loss:.4f} train_acc={tr_acc:.4f} train_auc={tr_auc:.4f} | "
             f"val_loss={va_loss:.4f} val_acc={va_acc:.4f} val_auc={va_auc:.4f}"
         )
+
+
+class MetricsRecorder(pl.Callback):
+    """Record and plot metrics at the end of each epoch."""
+
+    def __init__(self, out_dir: Path, train_loader: Iterable,
+                 val_loader: Iterable, test_loader: Optional[Iterable] = None,
+                 period: int = 1):
+        super().__init__()
+        self.out_dir = Path(out_dir)
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+        self.test_loader = test_loader
+        self.period = period
+        self.records: list[dict[str, float]] = []
+
+    def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: torch.nn.Module) -> None:
+        epoch = trainer.current_epoch + 1
+        if epoch % self.period != 0:
+            return
+        tr_loss, tr_acc, tr_auc = eval_metrics(pl_module, self.train_loader)
+        va_loss, va_acc, va_auc = eval_metrics(pl_module, self.val_loader)
+        rec = {
+            "epoch": epoch,
+            "train_loss": tr_loss,
+            "val_loss": va_loss,
+            "train_accuracy": tr_acc,
+            "val_accuracy": va_acc,
+            "train_auc": tr_auc,
+            "val_auc": va_auc,
+        }
+        if self.test_loader is not None:
+            te_loss, te_acc, te_auc = eval_metrics(pl_module, self.test_loader)
+            rec.update({
+                "test_loss": te_loss,
+                "test_accuracy": te_acc,
+                "test_auc": te_auc,
+            })
+        self.records.append(rec)
+
+        msg = (
+            f"Epoch {epoch:03d}: "
+            f"train_loss={tr_loss:.4f} val_loss={va_loss:.4f} "
+            f"train_acc={tr_acc:.4f} val_acc={va_acc:.4f} "
+            f"train_auc={tr_auc:.4f} val_auc={va_auc:.4f}"
+        )
+        if self.test_loader is not None:
+            msg += f" test_auc={rec['test_auc']:.4f}"
+        print(msg)
+
+    def on_train_end(self, trainer: pl.Trainer, pl_module: torch.nn.Module) -> None:
+        if not self.records:
+            return
+        df = pd.DataFrame(self.records)
+        perf_dir = self.out_dir / "performance"
+        perf_dir.mkdir(parents=True, exist_ok=True)
+        df.to_csv(perf_dir / "metrics.csv", index=False)
+
+        vis_dir = self.out_dir / "visualize"
+        vis_dir.mkdir(parents=True, exist_ok=True)
+
+        plt.figure()
+        plt.plot(df["epoch"], df["train_loss"], label="train")
+        plt.plot(df["epoch"], df["val_loss"], label="val")
+        if "test_loss" in df:
+            plt.plot(df["epoch"], df["test_loss"], label="test")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(vis_dir / "loss_curve.png")
+        plt.close()
+
+        plt.figure()
+        plt.plot(df["epoch"], df["train_accuracy"], label="train")
+        plt.plot(df["epoch"], df["val_accuracy"], label="val")
+        if "test_accuracy" in df:
+            plt.plot(df["epoch"], df["test_accuracy"], label="test")
+        plt.xlabel("Epoch")
+        plt.ylabel("Accuracy")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(vis_dir / "accuracy_curve.png")
+        plt.close()
+
+        plt.figure()
+        plt.plot(df["epoch"], df["train_auc"], label="train")
+        plt.plot(df["epoch"], df["val_auc"], label="val")
+        if "test_auc" in df:
+            plt.plot(df["epoch"], df["test_auc"], label="test")
+        plt.xlabel("Epoch")
+        plt.ylabel("AUC")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(vis_dir / "auc_curve.png")
+        plt.close()
+
