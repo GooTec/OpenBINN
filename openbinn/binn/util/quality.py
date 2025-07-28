@@ -6,6 +6,7 @@ import numpy as np
 from sklearn.metrics import roc_curve, auc, roc_auc_score
 import torch.nn.functional as F
 from typing import Iterable, Tuple, Optional
+import pytorch_lightning as pl
 
 
 def get_roc(
@@ -116,3 +117,18 @@ def eval_metrics(model: torch.nn.Module, loader: Iterable) -> tuple[float, float
     acc = correct / total
     loss = total_loss / total
     return loss, acc, auc_val
+
+
+class ValMetricsPrinter(pl.Callback):
+    """Print validation metrics after each training epoch."""
+
+    def __init__(self, val_loader: Iterable):
+        super().__init__()
+        self.val_loader = val_loader
+
+    def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: torch.nn.Module) -> None:
+        loss, acc, auc_val = eval_metrics(pl_module, self.val_loader)
+        print(
+            f"      Epoch {trainer.current_epoch + 1:03d}: "
+            f"loss={loss:.4f} acc={acc:.4f} auc={auc_val:.4f}"
+        )

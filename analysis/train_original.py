@@ -40,7 +40,7 @@ from sklearn.metrics import (
 )
 
 from openbinn.binn import PNet
-from openbinn.binn.util import InMemoryLogger, get_roc, eval_metrics
+from openbinn.binn.util import InMemoryLogger, get_roc, eval_metrics, ValMetricsPrinter
 from openbinn.binn.data import PnetSimDataSet, ReactomeNetwork, get_layer_maps
 
 # ───────────────────────────────────
@@ -197,7 +197,10 @@ def train_dataset(scen_dir: Path, reactome, best_params=None):
     print(f"      Start: loss={init_loss:.4f} acc={init_acc:.4f} auc={init_auc:.4f}")
     trainer = pl.Trainer(
         accelerator="auto", deterministic=True, max_epochs=MAX_EPOCHS,
-        callbacks=[EarlyStopping("val_loss", patience=PATIENCE, mode="min", verbose=False, min_delta=0.01)],
+        callbacks=[
+            EarlyStopping("val_loss", patience=PATIENCE, mode="min", verbose=False, min_delta=0.01),
+            ValMetricsPrinter(va_loader),
+        ],
         logger=InMemoryLogger(), enable_progress_bar=False
     )
     trainer.fit(model, tr_loader, va_loader)

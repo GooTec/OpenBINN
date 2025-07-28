@@ -34,7 +34,7 @@ from sklearn.metrics import (
 )
 
 from openbinn.binn import PNet
-from openbinn.binn.util import get_roc, eval_metrics
+from openbinn.binn.util import get_roc, eval_metrics, ValMetricsPrinter
 from openbinn.binn.data import PnetSimDataSet, ReactomeNetwork, get_layer_maps
 
 # ───────────────────────────────────
@@ -231,7 +231,8 @@ def train_dataset(
         callbacks=[
             EarlyStopping(
                 "val_loss", patience=PATIENCE, mode="min", verbose=False, min_delta=0.01
-            )
+            ),
+            ValMetricsPrinter(va_loader),
         ],
         logger=logger,
         enable_progress_bar=False,
