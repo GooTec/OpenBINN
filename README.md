@@ -59,11 +59,12 @@ python setup.py develop
    dataset into `../data/prostate/` relative to the repository.
 2. **Generate simulation datasets** (optional) using
    `python analysis/sim_data_generation.py --beta 2 --gamma 2 --pathway_nonlinear`.
-   With `--pathway_nonlinear` the true pathway score sums its genes (all
-   weights fixed at one) and applies a quadratic effect:
-   `beta * S + gamma * S^2`. A `pca_plot.png` visualizes the first two
-   principal components of the pathway genes and the outcome distribution.
-   Adjust `--beta` and `--gamma` or omit the flag for the linear baseline.
+   The script loads mutation and copy number data, picks a pathway, and
+   creates a nonlinear outcome according to `beta·S + gamma·S²` where `S` is the
+   sum of its genes. Additional pathways scaled by δ₁ and δ₂ are included as in
+   the original study. A `pca_plot.png` visualizes separation of the true
+   pathway genes and the outcome distribution. Adjust `--beta` and `--gamma` or
+   omit the flag for the linear baseline.
 3. **Edit** an experiment config in `configs/`, specifying model type, dataset paths, and analysis options.
 4. **Run** training and evaluation:
 

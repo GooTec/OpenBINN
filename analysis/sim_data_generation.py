@@ -6,7 +6,9 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_curve, auc
+from sklearn.decomposition import PCA
 from scipy.special import expit
+import matplotlib.pyplot as plt
 
 # ────────── 파라미터 ──────────
 RNG_BASE_SEED = 42
@@ -86,6 +88,41 @@ def calibrate_intercept(eta: np.ndarray, prev: float) -> float:
         else:
             lo = mid
     return mid
+
+# ────────── Visualization ──────────
+def save_visualization(X: pd.DataFrame, y: pd.Series, out: Path, *, genes_subset=None):
+    if genes_subset is not None:
+        mat = X[genes_subset].values
+    else:
+        mat = X.values
+    pcs = PCA(n_components=2).fit_transform(mat)
+    fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+    colors = ["C0", "C1"]
+    for cls in (0, 1):
+        idx = y.values == cls
+        ax[0].scatter(
+            pcs[idx, 0],
+            pcs[idx, 1],
+            s=20,
+            alpha=0.6,
+            edgecolor="k",
+            c=colors[cls],
+            label=f"M={cls}",
+        )
+    ax[0].set_xlabel("PC1")
+    ax[0].set_ylabel("PC2")
+    ax[0].set_title("PCA")
+    ax[0].legend(frameon=False)
+
+    counts = y.value_counts().sort_index()
+    ax[1].bar(counts.index.astype(str), counts.values, color=[colors[int(i)] for i in counts.index])
+    ax[1].set_xlabel("y")
+    ax[1].set_ylabel("count")
+    ax[1].set_title("Outcome distribution")
+
+    fig.tight_layout()
+    fig.savefig(out, dpi=200)
+    plt.close(fig)
 
 # ────────── (2) 헬퍼 ──────────
 def save_triplet(dst: Path, Xm, Xc, y):
@@ -178,6 +215,10 @@ def main(start_sim: int = 1, end_sim: int = N_SIM, *,
             Xm_sel = mutation
 
         sim_dir = OUT_ROOT / f"b{BETA}_g{GAMMA}" / f"{i}"
+        genes_for_pca = (
+            [g for g in pathways[true_p] if g in GA.columns] if pathway_nonlinear else list(true_genes)
+        )
+        save_visualization(GA.loc[y.index], y, sim_dir / "pca_plot.png", genes_subset=genes_for_pca)
         save_triplet(sim_dir, mutation, cnv_aligned, y)
         (sim_dir/"selected_genes.csv").write_text(SELECTED_GENES_TXT)
         make_splits(y, sim_dir/"splits")
