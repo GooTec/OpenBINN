@@ -34,7 +34,7 @@ from sklearn.metrics import (
 )
 
 from openbinn.binn import PNet
-from openbinn.binn.util import get_roc
+from openbinn.binn.util import get_roc, eval_metrics
 from openbinn.binn.data import PnetSimDataSet, ReactomeNetwork, get_layer_maps
 
 # ───────────────────────────────────
@@ -222,6 +222,8 @@ def train_dataset(
 
     logger = CSVLogger(save_dir=str(log_dir / "optimal"), name="")
 
+    init_loss, init_acc, init_auc = eval_metrics(model, va_loader)
+    print(f"      Start: loss={init_loss:.4f} acc={init_acc:.4f} auc={init_auc:.4f}")
     trainer = pl.Trainer(
         accelerator="auto",
         deterministic=True,
@@ -236,6 +238,8 @@ def train_dataset(
         default_root_dir=str(log_dir),
     )
     trainer.fit(model, tr_loader, va_loader)
+    fin_loss, fin_acc, fin_auc = eval_metrics(model, va_loader)
+    print(f"      End  : loss={fin_loss:.4f} acc={fin_acc:.4f} auc={fin_auc:.4f}")
 
     _, _, tr_auc, _, _ = get_roc(model, tr_loader, exp=False)
     fv, tv, va_auc, yv, pv = get_roc(model, va_loader, exp=False)

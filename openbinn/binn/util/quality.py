@@ -3,7 +3,8 @@
 import torch
 import numpy as np
 
-from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import roc_curve, auc, roc_auc_score
+import torch.nn.functional as F
 from typing import Iterable, Tuple, Optional
 
 
@@ -82,3 +83,36 @@ def get_roc(
     auc_value = auc(fpr, tpr)
 
     return fpr, tpr, auc_value, ys, outs
+
+
+def eval_metrics(model: torch.nn.Module, loader: Iterable) -> tuple[float, float, float]:
+    """Return average loss, accuracy and AUC for a loader."""
+    device = next(iter(model.parameters())).device
+    model.eval()
+    total_loss = 0.0
+    total = 0
+    correct = 0
+    all_probs = []
+    all_true = []
+    with torch.no_grad():
+        for x, y in loader:
+            x = x.to(device)
+            y = y.to(device)
+            out = model(x)
+            if not torch.is_tensor(out):
+                out = out[-1]
+            prob = out.view(-1)
+            loss = F.binary_cross_entropy(prob, y.view(-1))
+            pred = (prob > 0.5).float()
+            correct += (pred == y.view(-1)).sum().item()
+            total += len(y)
+            total_loss += loss.item() * len(y)
+            all_probs.append(prob.detach().cpu())
+            all_true.append(y.detach().cpu())
+
+    all_probs = torch.cat(all_probs).numpy()
+    all_true = torch.cat(all_true).numpy()
+    auc_val = roc_auc_score(all_true, all_probs)
+    acc = correct / total
+    loss = total_loss / total
+    return loss, acc, auc_val
