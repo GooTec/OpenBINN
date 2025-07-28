@@ -186,9 +186,11 @@ def main(start_sim: int = 1, end_sim: int = N_SIM, *,
             p2 = DELTAS[0] * p1
             p3 = DELTAS[1] * p2
             eta = p1 + p2 + p3
-            p = expit(eta)
+            c = calibrate_intercept(eta, prev)
+            p = expit(eta + c)
             y = pd.Series(rng_sim.binomial(1, p), index=X_true.index, name="response")
             Xm_sel = mutation
+            diag_df = pd.DataFrame({"id": X_true.index, "eta": eta, "prob": p, "response": y.values})
         else:
             true_p = rng_sim.choice(indep, 1)[0]
             nulls = list(rng_sim.choice([p for p in indep if p != true_p], 2, replace=False))
@@ -216,6 +218,7 @@ def main(start_sim: int = 1, end_sim: int = N_SIM, *,
             c = calibrate_intercept(eta, prev)
             p = expit(eta + c)
             y = pd.Series(rng_sim.binomial(1, p), index=Xm_sel.index, name="response")
+            diag_df = pd.DataFrame({"id": Xm_sel.index, "eta": eta, "prob": p, "response": y.values})
 
         sim_dir = OUT_ROOT / f"b{BETA}_g{GAMMA}" / f"{i}"
         if pathway_nonlinear:
@@ -226,6 +229,9 @@ def main(start_sim: int = 1, end_sim: int = N_SIM, *,
         save_triplet(sim_dir, mutation, cnv_aligned, y)
         (sim_dir/"selected_genes.csv").write_text(SELECTED_GENES_TXT)
         make_splits(y, sim_dir/"splits")
+        diag_df.to_csv(sim_dir/"predictor_table.csv", index=False)
+        with open(sim_dir/"intercept.txt", "w") as fh:
+            fh.write(str(c))
 
         for b in range(1, N_VARIANTS+1):
             bs_Xm, bs_Xc, bs_y = make_bootstrap(
