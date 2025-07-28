@@ -130,5 +130,23 @@ class ValMetricsPrinter(pl.Callback):
         loss, acc, auc_val = eval_metrics(pl_module, self.val_loader)
         print(
             f"      Epoch {trainer.current_epoch + 1:03d}: "
-            f"loss={loss:.4f} acc={acc:.4f} auc={auc_val:.4f}"
+            f"val_loss={loss:.4f} val_acc={acc:.4f} val_auc={auc_val:.4f}"
+        )
+
+
+class EpochMetricsPrinter(pl.Callback):
+    """Print train and validation metrics after every epoch."""
+
+    def __init__(self, train_loader: Iterable, val_loader: Iterable):
+        super().__init__()
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+
+    def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: torch.nn.Module) -> None:
+        tr_loss, tr_acc, tr_auc = eval_metrics(pl_module, self.train_loader)
+        va_loss, va_acc, va_auc = eval_metrics(pl_module, self.val_loader)
+        print(
+            f"      Epoch {trainer.current_epoch + 1:03d}: "
+            f"train_loss={tr_loss:.4f} train_acc={tr_acc:.4f} train_auc={tr_auc:.4f} | "
+            f"val_loss={va_loss:.4f} val_acc={va_acc:.4f} val_auc={va_auc:.4f}"
         )
