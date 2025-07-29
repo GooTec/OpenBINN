@@ -146,8 +146,7 @@ def train_dataset(scen_dir: Path, reactome, best_params=None):
                                   sampler=SubsetRandomSampler(ds.valid_idx),
                                   num_workers=NUM_WORKERS)
 
-            model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=lr,
-                        diversity_lambda=0.1)
+            model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=lr)
             trainer = pl.Trainer(
                 accelerator="auto", deterministic=True, max_epochs=MAX_EPOCHS,
                 callbacks=[EarlyStopping("val_loss", patience=PATIENCE,
@@ -191,8 +190,7 @@ def train_dataset(scen_dir: Path, reactome, best_params=None):
                           sampler=SubsetRandomSampler(ds.test_idx),
                           num_workers=NUM_WORKERS)
 
-    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=best_lr,
-                 diversity_lambda=0.1)
+    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=best_lr)
     init_loss, init_acc, init_auc = eval_metrics(model, va_loader)
     print(f"      Start: loss={init_loss:.4f} acc={init_acc:.4f} auc={init_auc:.4f}")
     trainer = pl.Trainer(

@@ -57,7 +57,7 @@ mutation, cnv_del, cnv_amp, cnv_aligned = (
     df.loc[common_idx] for df in (mutation, cnv_del, cnv_amp, cnv_aligned)
 )
 
-w = 1.5
+w = 1.0
 GA = w*mutation + w*cnv_del + w*cnv_amp
 X_true = GA.loc[:, GA.columns.intersection(true_genes)]
 alpha  = np.ones(X_true.shape[1])

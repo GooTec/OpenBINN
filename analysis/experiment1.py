@@ -128,8 +128,7 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
                 every_n_epochs=10,
                 save_last=True,
             )
-            model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=lr,
-                        diversity_lambda=0.1)
+            model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=lr)
             init_loss, init_acc, init_auc = eval_metrics(model, va_loader)
             print(
                 f"      Start: loss={init_loss:.4f} acc={init_acc:.4f} auc={init_auc:.4f}"
@@ -208,8 +207,7 @@ def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: s
         add_unk_genes=False
     )
     ds.node_index = [g for g in ds.node_index if g in maps[0].index]
-    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=0.001,
-                 diversity_lambda=0.1)
+    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=0.001)
     state = torch.load(results_dir / 'optimal' / 'trained_model.pth', map_location='cpu')
     if isinstance(state, dict) and 'state_dict' in state:
         state = state['state_dict']

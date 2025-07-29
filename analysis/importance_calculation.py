@@ -104,8 +104,7 @@ def explain_dataset(scen_dir: Path, reactome):
     ds.node_index = [g for g in ds.node_index if g in maps[0].index]
 
     # ─ 모델 ───────────────────────────
-    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=0.001,
-                 diversity_lambda=0.1)
+    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=0.001)
     state = torch.load(model_fp, map_location="cpu")
     model.load_state_dict(state); model.eval()
 
