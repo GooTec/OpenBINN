@@ -63,11 +63,13 @@ python setup.py develop
    creates a nonlinear outcome according to `beta·S + gamma·S²` where `S` is the
    sum of its genes. Additional pathways scaled by δ₁ and δ₂ are included as in
    the original study. A `pca_plot.png` visualizes separation of the true
-   pathway genes and the outcome distribution. The intercept is calibrated so
-   that the generated labels have roughly 50% prevalence, and a
+   pathway genes with the label distribution shown alongside. The intercept is
+   calibrated so that the generated labels have roughly 50% prevalence, and a
    `predictor_table.csv` in each scenario lists the linear predictor, calibrated
-   probability, and outcome for every sample. Adjust `--beta` and `--gamma` or
-   omit the flag for the linear baseline.
+   probability, and outcome for every sample. A logistic regression sanity check
+   is run after generation and the AUC scores are stored in
+   `logistic_metrics.csv`. Adjust `--beta` and `--gamma` or omit the flag for the
+   linear baseline.
 3. **Edit** an experiment config in `configs/`, specifying model type, dataset paths, and analysis options.
 4. **Run** training and evaluation:
 

@@ -72,7 +72,7 @@ def main() -> None:
         y = pd.read_csv(d / "response.csv", index_col=0)["response"]
         cnv_del = Xc.applymap(lambda v: 1 if v == -2 else 0)
         cnv_amp = Xc.applymap(lambda v: 1 if v == 2 else 0)
-        GA = 1.5 * Xm + 1.5 * cnv_del + 1.5 * cnv_amp
+        GA = 1.0 * Xm + 1.0 * cnv_del + 1.0 * cnv_amp
         tr = pd.read_csv(d / "splits" / "training_set_0.csv", index_col=0)
         va = pd.read_csv(d / "splits" / "validation_set.csv", index_col=0)
         te = pd.read_csv(d / "splits" / "test_set.csv", index_col=0)
