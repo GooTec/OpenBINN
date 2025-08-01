@@ -6,6 +6,7 @@ from .quality import (
     ValMetricsPrinter,
     EpochMetricsPrinter,
     MetricsRecorder,
+    GradNormPrinter,
 )
 from .tensor import scatter_nd
 

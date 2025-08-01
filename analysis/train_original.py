@@ -40,14 +40,20 @@ from sklearn.metrics import (
 )
 
 from openbinn.binn import PNet
-from openbinn.binn.util import InMemoryLogger, get_roc, eval_metrics, EpochMetricsPrinter
+from openbinn.binn.util import (
+    InMemoryLogger,
+    get_roc,
+    eval_metrics,
+    EpochMetricsPrinter,
+    GradNormPrinter,
+)
 from openbinn.binn.data import PnetSimDataSet, ReactomeNetwork, get_layer_maps
 
 # ───────────────────────────────────
 LR_LIST     = [1e-3, 5e-3]
 BS_LIST     = [8, 16]
 MAX_EPOCHS  = 200
-PATIENCE    = 10
+PATIENCE    = 30
 N_SIM       = 100
 N_VARIANTS  = 100
 DEFAULT_BETA  = 2
@@ -198,6 +204,7 @@ def train_dataset(scen_dir: Path, reactome, best_params=None):
         callbacks=[
             EarlyStopping("val_loss", patience=PATIENCE, mode="min", verbose=False, min_delta=0.01),
             EpochMetricsPrinter(tr_loader, va_loader),
+            GradNormPrinter(),
         ],
         logger=InMemoryLogger(), enable_progress_bar=False
     )

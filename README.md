@@ -73,6 +73,10 @@ python setup.py develop
 3. **Edit** an experiment config in `configs/`, specifying model type, dataset paths, and analysis options.
 4. **Run** training and evaluation:
 
+   Training scripts print epoch metrics and periodically report gradient norms to
+   help diagnose learning issues. Early stopping now waits 30 epochs for
+   improvement before halting.
+
     ```bash
 
     ```

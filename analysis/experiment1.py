@@ -17,7 +17,13 @@ from torch.utils.data.sampler import SubsetRandomSampler
 from torch_geometric.loader import DataLoader as GeoLoader
 
 from openbinn.binn import PNet
-from openbinn.binn.util import InMemoryLogger, get_roc, MetricsRecorder, eval_metrics
+from openbinn.binn.util import (
+    InMemoryLogger,
+    get_roc,
+    MetricsRecorder,
+    eval_metrics,
+    GradNormPrinter,
+)
 from openbinn.binn.data import (
     PnetSimDataSet,
     PnetSimExpDataSet,
@@ -140,12 +146,13 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
                 callbacks=[
                     pl.callbacks.EarlyStopping(
                         "val_loss",
-                        patience=10,
+                        patience=30,
                         mode="min",
                         verbose=False,
                         min_delta=0.01,
                     ),
                     callback,
+                    GradNormPrinter(),
                     mc,
                 ],
                 logger=InMemoryLogger(),

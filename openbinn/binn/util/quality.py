@@ -257,3 +257,24 @@ class MetricsRecorder(pl.Callback):
         plt.savefig(vis_dir / "auc_curve.png")
         plt.close()
 
+
+class GradNormPrinter(pl.Callback):
+    """Print gradient norm periodically during training."""
+
+    def __init__(self, period: int = 100):
+        super().__init__()
+        self.period = period
+
+    def on_before_optimizer_step(
+        self, trainer: pl.Trainer, pl_module: torch.nn.Module, optimizer, opt_idx
+    ) -> None:
+        if trainer.global_step % self.period != 0:
+            return
+        total_norm = 0.0
+        for p in pl_module.parameters():
+            if p.grad is not None:
+                param_norm = p.grad.detach().data.norm(2)
+                total_norm += param_norm.item() ** 2
+        total_norm **= 0.5
+        print(f"      Step {trainer.global_step}: grad_norm={total_norm:.4f}")
+
