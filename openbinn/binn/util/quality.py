@@ -271,6 +271,8 @@ class GradNormPrinter(pl.Callback):
         pl_module: torch.nn.Module,
         optimizer,
         opt_idx=None,
+        *args,
+        **kwargs,
     ) -> None:
         if trainer.global_step % self.period != 0:
             return
