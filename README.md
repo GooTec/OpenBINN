@@ -58,10 +58,24 @@ python setup.py develop
 1. **Prepare data** by running `bash pull_data.sh`. This downloads the prostate
    dataset into `../data/prostate/` relative to the repository.
 2. **Generate simulation datasets** (optional) using
-   `python analysis/sim_data_generation.py --beta 2 --gamma 2`.
-   Adjust `--beta` and `--gamma` to create other folders under `data/`.
+   `python analysis/sim_data_generation.py --beta 2 --gamma 2 --pathway_nonlinear`.
+   The script loads mutation and copy number data, picks a pathway, and
+   creates a nonlinear outcome according to `beta·S + gamma·S²` where `S` is the
+   sum of its genes. Additional pathways scaled by δ₁ and δ₂ are included as in
+   the original study. A `pca_plot.png` visualizes separation of the true
+   pathway genes with the label distribution shown alongside. The intercept is
+   calibrated so that the generated labels have roughly 50% prevalence, and a
+   `predictor_table.csv` in each scenario lists the linear predictor, calibrated
+   probability, and outcome for every sample. A logistic regression sanity check
+   is run after generation and the AUC scores are stored in
+   `logistic_metrics.csv`. Adjust `--beta` and `--gamma` or omit the flag for the
+   linear baseline.
 3. **Edit** an experiment config in `configs/`, specifying model type, dataset paths, and analysis options.
 4. **Run** training and evaluation:
+
+   Training scripts print epoch metrics and periodically report gradient norms to
+   help diagnose learning issues. Early stopping now waits 30 epochs for
+   improvement before halting.
 
     ```bash
 

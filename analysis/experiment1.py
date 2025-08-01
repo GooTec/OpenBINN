@@ -17,7 +17,13 @@ from torch.utils.data.sampler import SubsetRandomSampler
 from torch_geometric.loader import DataLoader as GeoLoader
 
 from openbinn.binn import PNet
-from openbinn.binn.util import InMemoryLogger, get_roc
+from openbinn.binn.util import (
+    InMemoryLogger,
+    get_roc,
+    MetricsRecorder,
+    eval_metrics,
+    GradNormPrinter,
+)
 from openbinn.binn.data import (
     PnetSimDataSet,
     PnetSimExpDataSet,
@@ -25,7 +31,6 @@ from openbinn.binn.data import (
     get_layer_maps,
 )
 from openbinn.explainer import Explainer
-import openbinn.experiment_utils as utils
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -50,18 +55,18 @@ class ModelWrapper(torch.nn.Module):
         outs = self.model(x)
         return outs[self.target_layer - 1]
 
-def generate(beta: float, gamma: float) -> None:
-    subprocess.run(
-        [
-            "python",
-            "generate_simulations.py",
-            "--beta", str(beta),
-            "--gamma", str(gamma),
-            "--n_sim", "1",
-            "--exp", str(EXP_NUM),
-        ],
-        check=True,
-    )
+def generate(beta: float, gamma: float, nonlinear: bool = True) -> None:
+    cmd = [
+        "python",
+        "generate_simulations.py",
+        "--beta", str(beta),
+        "--gamma", str(gamma),
+        "--n_sim", "1",
+        "--exp", str(EXP_NUM),
+    ]
+    if nonlinear:
+        cmd.append("--pathway_nonlinear")
+    subprocess.run(cmd, check=True)
 
 def load_reactome_once():
     return ReactomeNetwork(
@@ -89,92 +94,9 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
     )
     ds.node_index = [g for g in ds.node_index if g in maps[0].index]
 
-    class PerfCallback(pl.Callback):
+    class PerfCallback(MetricsRecorder):
         def __init__(self, out_dir: Path, tr_loader, va_loader, te_loader, period: int = 10):
-            self.out_dir = out_dir
-            self.tr_loader = tr_loader
-            self.va_loader = va_loader
-            self.te_loader = te_loader
-            self.period = period
-            self.records = []
-
-        def _compute_loss_acc(self, pl_module, loader):
-            device = pl_module.device
-            total_loss = 0.0
-            correct = 0.0
-            total = 0
-            pl_module.eval()
-            with torch.no_grad():
-                for x, y in loader:
-                    x = x.to(device)
-                    y = y.to(device)
-                    out = pl_module.step((x, y), "eval")
-                    total_loss += out["loss"].item() * out["total"]
-                    correct += out["correct"].item()
-                    total += out["total"]
-            return total_loss / total, correct / total
-
-        def on_validation_epoch_end(self, trainer, pl_module):
-            epoch = trainer.current_epoch + 1
-            if epoch % self.period == 0 or epoch == trainer.max_epochs:
-                tr_auc = get_roc(pl_module, self.tr_loader, exp=False)[2]
-                va_auc = get_roc(pl_module, self.va_loader, exp=False)[2]
-                te_auc = get_roc(pl_module, self.te_loader, exp=False)[2]
-                tr_loss, tr_acc = self._compute_loss_acc(pl_module, self.tr_loader)
-                va_loss, va_acc = self._compute_loss_acc(pl_module, self.va_loader)
-                te_loss, te_acc = self._compute_loss_acc(pl_module, self.te_loader)
-                self.records.append(
-                    {
-                        "epoch": int(epoch),
-                        "train_loss": float(tr_loss),
-                        "val_loss": float(va_loss),
-                        "test_loss": float(te_loss),
-                        "train_accuracy": float(tr_acc),
-                        "val_accuracy": float(va_acc),
-                        "test_accuracy": float(te_acc),
-                        "train_auc": float(tr_auc),
-                        "val_auc": float(va_auc),
-                        "test_auc": float(te_auc),
-                    }
-                )
-                df = pd.DataFrame(self.records)
-                perf_dir = self.out_dir / "performance"
-                perf_dir.mkdir(parents=True, exist_ok=True)
-                df.to_csv(perf_dir / "metrics.csv", index=False)
-                vis_dir = self.out_dir / "visualize"
-                vis_dir.mkdir(parents=True, exist_ok=True)
-                plt.figure()
-                plt.plot(df["epoch"], df["train_loss"], label="train")
-                plt.plot(df["epoch"], df["val_loss"], label="val")
-                plt.plot(df["epoch"], df["test_loss"], label="test")
-                plt.xlabel("Epoch")
-                plt.ylabel("Loss")
-                plt.legend()
-                plt.tight_layout()
-                plt.savefig(vis_dir / "loss_curve.png")
-                plt.close()
-
-                plt.figure()
-                plt.plot(df["epoch"], df["train_accuracy"], label="train")
-                plt.plot(df["epoch"], df["val_accuracy"], label="val")
-                plt.plot(df["epoch"], df["test_accuracy"], label="test")
-                plt.xlabel("Epoch")
-                plt.ylabel("Accuracy")
-                plt.legend()
-                plt.tight_layout()
-                plt.savefig(vis_dir / "accuracy_curve.png")
-                plt.close()
-
-                plt.figure()
-                plt.plot(df["epoch"], df["train_auc"], label="train")
-                plt.plot(df["epoch"], df["val_auc"], label="val")
-                plt.plot(df["epoch"], df["test_auc"], label="test")
-                plt.xlabel("Epoch")
-                plt.ylabel("AUC")
-                plt.legend()
-                plt.tight_layout()
-                plt.savefig(vis_dir / "auc_curve.png")
-                plt.close()
+            super().__init__(out_dir, tr_loader, va_loader, te_loader, period)
 
     best_score = float("inf")
     best_state = None
@@ -213,6 +135,10 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
                 save_last=True,
             )
             model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=lr)
+            init_loss, init_acc, init_auc = eval_metrics(model, va_loader)
+            print(
+                f"      Start: loss={init_loss:.4f} acc={init_acc:.4f} auc={init_auc:.4f}"
+            )
             trainer = pl.Trainer(
                 accelerator="auto",
                 deterministic=True,
@@ -220,12 +146,13 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
                 callbacks=[
                     pl.callbacks.EarlyStopping(
                         "val_loss",
-                        patience=10,
+                        patience=30,
                         mode="min",
                         verbose=False,
                         min_delta=0.01,
                     ),
                     callback,
+                    GradNormPrinter(),
                     mc,
                 ],
                 logger=InMemoryLogger(),
@@ -233,6 +160,10 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
             )
 
             trainer.fit(model, tr_loader, va_loader)
+            fin_loss, fin_acc, fin_auc = eval_metrics(model, va_loader)
+            print(
+                f"      End  : loss={fin_loss:.4f} acc={fin_acc:.4f} auc={fin_auc:.4f}"
+            )
 
             if mc.best_model_score is not None:
                 score = mc.best_model_score.item()
@@ -339,7 +270,7 @@ if __name__ == "__main__":
     reactome = load_reactome_once()
     for beta in BETA_LIST:
         for gamma in GAMMA_LIST:
-            generate(beta, gamma)
+            generate(beta, gamma, nonlinear=True)
             scenario_id = Path(f"b{beta}_g{gamma}") / "1"
             data_dir = Path("data") / f"experiment{EXP_NUM}" / scenario_id
             results_dir = Path("results") / f"experiment{EXP_NUM}" / scenario_id

@@ -74,7 +74,8 @@ class PNet(BaseNet):
         lr: float = 0.001,
         intermediate_outputs: bool = True,
         class_weights: bool=True,
-        scheduler: str="lambda"
+        scheduler: str="lambda",
+        diversity_lambda: float = 0.0
     ):
         """Initialize.
         :param layers: list of pandas dataframes describing the pnet masks for each
@@ -82,6 +83,7 @@ class PNet(BaseNet):
         :param num_genes: number of genes in dataset
         :param num_features: number of features for each gene
         :param lr: learning rate
+        :param diversity_lambda: weight for layer diversity penalty
         """
         super().__init__(lr=lr,scheduler=scheduler)
         self.class_weights=class_weights
@@ -89,6 +91,7 @@ class PNet(BaseNet):
         self.num_genes = num_genes
         self.num_features = num_features
         self.intermediate_outputs = intermediate_outputs
+        self.diversity_lambda = diversity_lambda
         self.network = nn.ModuleList()
         self.intermediate_outs = nn.ModuleList()
         self.network.append(
@@ -151,6 +154,14 @@ class PNet(BaseNet):
             # Weighted average of the predictive outputs from intermediate layers
             loss += self.loss_weights[aa] * F.binary_cross_entropy(y, y_true, weight=weights)
         loss /= np.sum(self.loss_weights)
+
+        if self.diversity_lambda > 0 and len(y_hat) > 1:
+            div_loss = 0.0
+            for i in range(1, len(y_hat)):
+                diff = y_hat[i] - y_hat[i-1]
+                div_loss += torch.exp(-torch.mean(diff ** 2))
+            div_loss = div_loss / (len(y_hat) - 1)
+            loss = loss + self.diversity_lambda * div_loss
 
         correct = ((y_hat[-1] > 0.5).flatten() == y_true.flatten()).sum()
         # assess accuracy
