@@ -266,7 +266,11 @@ class GradNormPrinter(pl.Callback):
         self.period = period
 
     def on_before_optimizer_step(
-        self, trainer: pl.Trainer, pl_module: torch.nn.Module, optimizer, opt_idx
+        self,
+        trainer: pl.Trainer,
+        pl_module: torch.nn.Module,
+        optimizer,
+        opt_idx=None,
     ) -> None:
         if trainer.global_step % self.period != 0:
             return
