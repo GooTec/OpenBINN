@@ -1,119 +1,35 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""generate_simulations.py
-Generate simple simulation datasets and their bootstrap/gene-permutation/
-label-permutation variants. The datasets are stored under
-``data/experiment{exp}/b{beta}_g{gamma}/{sim}`` if ``--exp`` is provided,
-otherwise ``data/b{beta}_g{gamma}/{sim}``.
-This script is intentionally lightweight and does not replicate the full
-simulation procedures used in the original project, but provides minimal
-placeholders compatible with the training scripts.
+"""Wrapper around ``sim_data_generation``.
+
+This script keeps the original CLI used by ``experiment1.py`` but delegates the
+actual dataset creation to :mod:`sim_data_generation`, which implements the
+multi-omics pathway-based simulation.  The output directory follows the same
+structure as before::
+
+    data/[experiment{N}/]b{beta}_g{gamma}/{sim}
+
+Use ``--pathway_nonlinear`` to randomly select a pathway and generate outcomes
+using the quadratic score ``beta * S + gamma * S^2`` (with additional pathways
+scaled by δ₁ and δ₂).  A ``pca_plot.png`` is saved showing the first two
+principal components of the true genes and the outcome distribution.
 """
+
+from __future__ import annotations
 
 import argparse
 from pathlib import Path
-import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
-
-N_SIM = 100
-N_VARIANTS = 100
-N_SAMPLES = 200
-N_GENES = 20
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
+import sim_data_generation as sd
 
 
-def bootstrap_fixed(X: pd.DataFrame, y: pd.Series, rng: np.random.RandomState):
-    idx = rng.choice(len(X), size=len(X), replace=True)
-    Xb = pd.DataFrame(X.values[idx, :], columns=X.columns, index=X.index)
-    yb = pd.Series(y.values[idx], index=y.index, name=y.name)
-    return Xb, yb
-
-
-def gene_permutation(X: pd.DataFrame, rng: np.random.RandomState):
-    Xp = X.copy()
-    for col in Xp.columns:
-        Xp[col] = rng.permutation(Xp[col].values)
-    return Xp
-
-
-def label_permutation(y: pd.Series, rng: np.random.RandomState):
-    yp = y.copy()
-    yp[:] = rng.permutation(yp.values)
-    return yp
-
-
-def generate_single(out_dir: Path, beta: float, gamma: float, seed: int):
-    rng = np.random.RandomState(seed)
-    genes = [f"g{i+1}" for i in range(N_GENES)]
-
-    X = rng.normal(0, 1, size=(N_SAMPLES, N_GENES))
-    coefs = np.zeros(N_GENES)
-    active = rng.choice(N_GENES, size=N_GENES // 2, replace=False)
-    coefs[active] = rng.normal(beta, 0.1, size=len(active))
-    eta = X.dot(coefs) + gamma
-    p = 1 / (1 + np.exp(-eta))
-    y = (rng.rand(N_SAMPLES) < p).astype(int)
-
-    dfX = pd.DataFrame(X, columns=genes)
-    dfX.index.name = "id"
-    dfy = pd.Series(y, index=dfX.index, name="response")
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    dfX.to_csv(out_dir / "somatic_mutation_paper.csv")
-    dfy.to_frame().to_csv(out_dir / "response.csv", index=True)
-    pd.Series(genes, name="genes").to_csv(out_dir / "selected_genes.csv", index=False)
-    pd.DataFrame({"gene": genes, "alpha": rng.normal(0, 1, size=N_GENES)}).to_csv(out_dir / "gene_alpha.csv", index=False)
-    pd.DataFrame({"pathway": [f"p{i+1}" for i in range(len(active))], "beta": rng.normal(beta, 1, size=len(active))}).to_csv(out_dir / "pathway_beta.csv", index=False)
-
-    # stratified splits to maintain consistent outcome distribution across sets
-    tr, temp = train_test_split(
-        dfX.index,
-        train_size=0.8,
-        random_state=seed,
-        stratify=dfy,
-    )
-    va, te = train_test_split(
-        temp,
-        train_size=0.5,
-        random_state=seed,
-        stratify=dfy.loc[temp],
-    )
-
-    sp = out_dir / "splits"
-    sp.mkdir(exist_ok=True)
-    pd.DataFrame({"id": tr, "response": dfy.loc[tr]}).to_csv(sp / "training_set_0.csv", index=True)
-    pd.DataFrame({"id": va, "response": dfy.loc[va]}).to_csv(sp / "validation_set.csv", index=True)
-    pd.DataFrame({"id": te, "response": dfy.loc[te]}).to_csv(sp / "test_set.csv", index=True)
-
-    for method in ("bootstrap", "gene-permutation", "label-permutation"):
-        base = out_dir / method
-        base.mkdir(exist_ok=True)
-        for b in range(1, N_VARIANTS + 1):
-            sub = base / f"{b}"
-            sub.mkdir(parents=True, exist_ok=True)
-            rng_v = np.random.RandomState(seed + b)
-            if method == "bootstrap":
-                Xv, yv = bootstrap_fixed(dfX, dfy, rng_v)
-            elif method == "gene-permutation":
-                Xv = gene_permutation(dfX, rng_v)
-                yv = dfy
-            else:
-                Xv = dfX
-                yv = label_permutation(dfy, rng_v)
-            Xv.to_csv(sub / "somatic_mutation_paper.csv")
-            yv.to_frame().to_csv(sub / "response.csv", index=True)
-            spv = sub / "splits"
-            spv.mkdir(exist_ok=True)
-            pd.DataFrame({"id": tr, "response": yv.loc[tr]}).to_csv(spv / "training_set_0.csv", index=True)
-            pd.DataFrame({"id": va, "response": yv.loc[va]}).to_csv(spv / "validation_set.csv", index=True)
-            pd.DataFrame({"id": te, "response": yv.loc[te]}).to_csv(spv / "test_set.csv", index=True)
-
-
-def main():
+def main() -> None:
     ap = argparse.ArgumentParser(description="Generate simulation datasets")
-    ap.add_argument("--beta", type=float, default=0)
-    ap.add_argument("--gamma", type=float, default=0.0)
-    ap.add_argument("--n_sim", type=int, default=N_SIM,
+    ap.add_argument("--beta", type=float, default=2.0)
+    ap.add_argument("--gamma", type=float, default=2.0)
+    ap.add_argument("--n_sim", type=int, default=sd.N_SIM,
                     help="Number of simulations if --end_sim is not given")
     ap.add_argument("--start_sim", type=int, default=1,
                     help="Start index of simulation (inclusive)")
@@ -121,20 +37,65 @@ def main():
                     help="End index of simulation (inclusive). Defaults to n_sim")
     ap.add_argument("--exp", type=int, default=None,
                     help="Experiment number to store data under")
+    ap.add_argument("--pathway_nonlinear", action="store_true",
+                    help="Use pathway-based nonlinear outcome generation")
+    ap.add_argument("--alpha_sigma", type=float, default=20.0,
+                    help="Stddev of gene coefficients when nonlinear")
+    ap.add_argument("--prev", type=float, default=0.5,
+                    help="Target prevalence for intercept calibration")
     args = ap.parse_args()
 
     end = args.end_sim if args.end_sim is not None else args.n_sim
     if end < args.start_sim:
         raise ValueError("end_sim must be >= start_sim")
 
-    data_root = Path("./data")
+    # configure sim_data_generation globals
+    sd.BETA = args.beta
+    sd.GAMMA = args.gamma
+    out_root = Path("./data")
     if args.exp is not None:
-        data_root = data_root / f"experiment{args.exp}"
-    data_root = data_root / f"b{args.beta}_g{args.gamma}"
+        out_root = out_root / f"experiment{args.exp}"
+    sd.OUT_ROOT = out_root
+
+    sd.main(
+        args.start_sim,
+        end,
+        pathway_nonlinear=args.pathway_nonlinear,
+        alpha_sigma=args.alpha_sigma,
+        prev=args.prev,
+    )
+
+    # ╭───── Logistic regression sanity check ─────╮
+    def eval_dir(d: Path) -> None:
+        Xm = pd.read_csv(d / "somatic_mutation_paper.csv", index_col=0)
+        Xc = pd.read_csv(d / "P1000_data_CNA_paper.csv", index_col=0)
+        y = pd.read_csv(d / "response.csv", index_col=0)["response"]
+        cnv_del = Xc.applymap(lambda v: 1 if v == -2 else 0)
+        cnv_amp = Xc.applymap(lambda v: 1 if v == 2 else 0)
+        GA = 1.0 * Xm + 1.0 * cnv_del + 1.0 * cnv_amp
+        tr = pd.read_csv(d / "splits" / "training_set_0.csv", index_col=0)
+        va = pd.read_csv(d / "splits" / "validation_set.csv", index_col=0)
+        te = pd.read_csv(d / "splits" / "test_set.csv", index_col=0)
+        model = LogisticRegression(penalty="l1", solver="liblinear", max_iter=1000)
+        model.fit(GA.loc[tr["id"]], tr["response"])
+        def auc(df):
+            p = model.predict_proba(GA.loc[df["id"]])[:, 1]
+            return roc_auc_score(df["response"], p)
+        auc_tr = auc(tr)
+        auc_va = auc(va)
+        auc_te = auc(te)
+        pd.DataFrame({
+            "train_auc": [auc_tr],
+            "val_auc": [auc_va],
+            "test_auc": [auc_te],
+        }).to_csv(d / "logistic_metrics.csv", index=False)
+        print(f"  [{d.name}] train AUC={auc_tr:.3f} val AUC={auc_va:.3f} test AUC={auc_te:.3f}")
+
+    scen_root = out_root / f"b{args.beta}_g{args.gamma}"
     for i in range(args.start_sim, end + 1):
-        generate_single(data_root / f"{i}", args.beta, args.gamma, seed=42 + i)
-    print(f"✓ generated simulations at {data_root}")
+        eval_dir(scen_root / f"{i}")
 
 
 if __name__ == "__main__":
     main()
+
