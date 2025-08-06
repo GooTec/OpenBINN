@@ -3,6 +3,7 @@
 import torch
 import torch.nn.functional as F
 import pytorch_lightning as pl
+from sklearn.metrics import roc_auc_score
 
 from typing import Tuple, List
 
@@ -67,7 +68,6 @@ class BaseNet(pl.LightningModule):
         Creates log entries with name `f"{kind}_loss"` and `f"{kind}_accuracy"`.
         """
         with torch.no_grad():
-            # calculate average loss and average accuracy
             total_loss = sum(_["loss"] * _["total"] for _ in outputs)
             total = sum(_["total"] for _ in outputs)
             avg_loss = total_loss / total
@@ -75,9 +75,17 @@ class BaseNet(pl.LightningModule):
             correct = sum(_["correct"] for _ in outputs)
             avg_acc = correct / total
 
-        # log
+            if "probs" in outputs[0]:
+                probs = torch.cat([_['probs'] for _ in outputs]).cpu().numpy()
+                true = torch.cat([_['true'] for _ in outputs]).cpu().numpy()
+                auc_val = roc_auc_score(true, probs)
+            else:
+                auc_val = None
+
         self.log(f"{kind}_loss", avg_loss)
         self.log(f"{kind}_accuracy", avg_acc)
+        if auc_val is not None:
+            self.log(f"{kind}_auc", auc_val)
 
     def training_step(self, batch, batch_idx) -> dict:
         output = self.step(batch, "train")

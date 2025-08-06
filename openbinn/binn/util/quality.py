@@ -117,7 +117,7 @@ def eval_metrics(model: torch.nn.Module, loader: Iterable) -> tuple[float, float
             out = model(x)
             if not torch.is_tensor(out):
                 out = out[-1]
-            prob = out.view(-1)
+            prob = torch.sigmoid(out.view(-1))
             all_probs.append(prob.detach().cpu())
             all_true.append(y.detach().cpu())
 

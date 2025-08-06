@@ -3,7 +3,7 @@ import numpy as np
 import torch.nn.functional as F
 from torch import nn
 from torch.nn import Linear, ReLU
-import pandas as pd 
+import pandas as pd
 
 from .base_net import BaseNet
 from .util import scatter_nd
@@ -73,9 +73,14 @@ class PNet(BaseNet):
         num_features: int = 3,
         lr: float = 0.001,
         intermediate_outputs: bool = True,
-        class_weights: bool=True,
-        scheduler: str="lambda",
-        diversity_lambda: float = 0.0
+        class_weights: bool = True,
+        scheduler: str = "lambda",
+        diversity_lambda: float = 0.0,
+        loss_cfg: dict | None = None,
+        norm_type: str = "batchnorm",
+        dropout_rate: float = 0.1,
+        input_dropout: float = 0.5,
+        optim_cfg: dict | None = None,
     ):
         """Initialize.
         :param layers: list of pandas dataframes describing the pnet masks for each
@@ -85,44 +90,57 @@ class PNet(BaseNet):
         :param lr: learning rate
         :param diversity_lambda: weight for layer diversity penalty
         """
-        super().__init__(lr=lr,scheduler=scheduler)
-        self.class_weights=class_weights
+        super().__init__(lr=lr, scheduler=scheduler)
+        self.class_weights = class_weights
         self.layers = layers
         self.num_genes = num_genes
         self.num_features = num_features
         self.intermediate_outputs = intermediate_outputs
         self.diversity_lambda = diversity_lambda
+        self.optim_cfg = optim_cfg or {}
+
+        self.loss_cfg = {"main": 1.0, "aux": 0.0, "per_layer": None}
+        if loss_cfg is not None:
+            self.loss_cfg.update(loss_cfg)
+        if self.loss_cfg["per_layer"] is None:
+            self.loss_cfg["per_layer"] = [1.0] * (len(layers) - 1)
+
+        self.norm_type = norm_type
+        self.dropout_rate = dropout_rate
+        self.input_dropout = input_dropout
+
         self.network = nn.ModuleList()
         self.intermediate_outs = nn.ModuleList()
+
+        def _norm(n):
+            if self.norm_type == "batchnorm":
+                return nn.BatchNorm1d(n)
+            if self.norm_type == "layernorm":
+                return nn.LayerNorm(n)
+            return nn.Identity()
+
         self.network.append(
-            nn.Sequential(FeatureLayer(self.num_genes, self.num_features), nn.Tanh())
+            nn.Sequential(
+                FeatureLayer(self.num_genes, self.num_features),
+                _norm(self.num_genes),
+                nn.Tanh(),
+            )
         )
-        ## Taken from pnet
-        self.loss_weights = [2, 7, 20, 54, 148, 400]
-        if len(self.layers) > 5:
-            self.loss_weights = [2] * (len(self.layers) - 5) + self.loss_weights
         for i, layer_map in enumerate(layers):
             if i != (len(layers) - 1):
-                if i == 0:
-                    ## First layer has dropout of 0.5, the rest have 0.1
-                    dropout = 0.5
-                else:
-                    dropout = 0.1
-                    ## Build pnet layers
+                dropout = self.input_dropout if i == 0 else self.dropout_rate
                 self.network.append(
                     nn.Sequential(
-                        nn.Dropout(p=dropout), SparseLayer(layer_map), nn.Tanh()
+                        nn.Dropout(p=dropout),
+                        SparseLayer(layer_map),
+                        _norm(layer_map.shape[1]),
+                        nn.Tanh(),
                     )
                 )
-                ## Build layers for intermediate output
                 if self.intermediate_outputs:
-                    self.intermediate_outs.append(
-                        nn.Sequential(nn.Linear(layer_map.shape[0], 1), nn.Sigmoid())
-                    )
+                    self.intermediate_outs.append(nn.Linear(layer_map.shape[0], 1))
             else:
-                self.network.append(
-                    nn.Sequential(nn.Linear(layer_map.shape[0], 1), nn.Sigmoid())
-                )
+                self.network.append(nn.Linear(layer_map.shape[0], 1))
 
     def forward(self, x):
         """ Forward pass, output a list containing predictions from each
@@ -132,7 +150,8 @@ class PNet(BaseNet):
         y = []
         x = self.network[0](x)
         for aa in range(1, len(self.network) - 1):
-            y.append(self.intermediate_outs[aa - 1](x))
+            if self.intermediate_outputs:
+                y.append(self.intermediate_outs[aa - 1](x))
             x = self.network[aa](x)
         y.append(self.network[-1](x))
 
@@ -141,35 +160,89 @@ class PNet(BaseNet):
     def step(self, batch, kind: str) -> dict:
         """Step function executed by lightning trainer module."""
         # run the model and calculate loss
-        x,y_true=batch
+        x, y_true = batch
         y_hat = self(x)
 
-        loss = 0
         if self.class_weights:
-            weights=y_true*0.75+0.75
+            weights = y_true * 0.75 + 0.75
         else:
-            weights=None
-            
-        for aa, y in enumerate(y_hat):
-            # Weighted average of the predictive outputs from intermediate layers
-            loss += self.loss_weights[aa] * F.binary_cross_entropy(y, y_true, weight=weights)
-        loss /= np.sum(self.loss_weights)
+            weights = None
+
+        main_logit = y_hat[-1]
+        main_loss = F.binary_cross_entropy_with_logits(main_logit, y_true, weight=weights)
+
+        aux_losses = []
+        for w, logit in zip(self.loss_cfg["per_layer"], y_hat[:-1]):
+            aux_losses.append(w * F.binary_cross_entropy_with_logits(logit, y_true, weight=weights))
+        aux_loss = sum(aux_losses) / max(1, len(aux_losses)) if aux_losses else torch.tensor(0.0, device=main_logit.device)
+
+        loss = self.loss_cfg["main"] * main_loss + self.loss_cfg["aux"] * aux_loss
 
         if self.diversity_lambda > 0 and len(y_hat) > 1:
             div_loss = 0.0
             for i in range(1, len(y_hat)):
-                diff = y_hat[i] - y_hat[i-1]
+                diff = torch.sigmoid(y_hat[i]) - torch.sigmoid(y_hat[i - 1])
                 div_loss += torch.exp(-torch.mean(diff ** 2))
             div_loss = div_loss / (len(y_hat) - 1)
             loss = loss + self.diversity_lambda * div_loss
 
-        correct = ((y_hat[-1] > 0.5).flatten() == y_true.flatten()).sum()
-        # assess accuracy
+        probs = torch.sigmoid(main_logit).view(-1)
+        correct = ((probs > 0.5).flatten() == y_true.flatten()).sum()
         total = len(y_true)
+
+        self.log(f"{kind}_main_loss", main_loss, batch_size=total)
+        self.log(f"{kind}_aux_loss", aux_loss, batch_size=total)
+
         batch_dict = {
             "loss": loss,
-            # correct and total will be used at epoch end
             "correct": correct,
             "total": total,
+            "probs": probs.detach(),
+            "true": y_true.detach(),
         }
         return batch_dict
+
+    def configure_optimizers(self):
+        cfg = {"opt": "adam", "lr": self.lr, "wd": 0.0, "scheduler": "none"}
+        cfg.update(self.optim_cfg)
+        lr = cfg.get("lr", self.lr)
+        wd = cfg.get("wd", 0.0)
+        if cfg.get("opt", "adam") == "adamw":
+            optimizer = torch.optim.AdamW(self.parameters(), lr=lr, weight_decay=wd)
+        else:
+            optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=wd)
+
+        scheduler_name = cfg.get("scheduler", "none")
+        scheduler = None
+        if scheduler_name == "cosine":
+            t_max = cfg.get("t_max", 50)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max)
+        elif scheduler_name == "plateau":
+            monitor = cfg.get("monitor", "val_loss")
+            patience = cfg.get("patience", 10)
+            scheduler = {
+                "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=patience),
+                "monitor": monitor,
+            }
+        elif scheduler_name == "onecycle":
+            steps_per_epoch = cfg.get("steps_per_epoch")
+            epochs = cfg.get("epochs", 1)
+            scheduler = torch.optim.lr_scheduler.OneCycleLR(
+                optimizer, max_lr=lr, steps_per_epoch=steps_per_epoch, epochs=epochs
+            )
+
+        warmup_steps = cfg.get("warmup_steps", 0)
+        if warmup_steps > 0:
+            warmup = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.1, total_iters=warmup_steps)
+            if scheduler is not None:
+                scheduler = torch.optim.lr_scheduler.SequentialLR(
+                    optimizer, [warmup, scheduler], milestones=[warmup_steps]
+                )
+            else:
+                scheduler = warmup
+
+        if scheduler_name == "plateau" and isinstance(scheduler, dict):
+            return [optimizer], [scheduler]
+        elif scheduler is not None:
+            return [optimizer], [scheduler]
+        return [optimizer], []

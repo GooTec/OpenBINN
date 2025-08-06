@@ -39,8 +39,6 @@ import json
 PATHWAY_LINEAR_EFFECT = 2.0
 PATHWAY_NONLINEAR_EFFECT = 2.0
 METHOD = "deeplift"
-LEARNING_RATE = 1e-3
-BATCH_SIZE = 32
 
 class ModelWrapper(torch.nn.Module):
     def __init__(self, model: PNet, target_layer: int):
@@ -76,7 +74,14 @@ def load_reactome_once():
         )
     )
 
-def train_dataset(data_dir: Path, results_dir: Path, reactome):
+def train_dataset(
+    data_dir: Path,
+    results_dir: Path,
+    reactome,
+    lr: float,
+    batch_size: int,
+    args,
+):
     ds = PnetSimDataSet(root=str(data_dir), num_features=3)
     ds.split_index_by_file(
         train_fp=data_dir / "splits" / "training_set_0.csv",
@@ -90,7 +95,7 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
         direction="root_to_leaf",
         add_unk_genes=False,
     )
-    ds.node_index = [g for g in ds.node_index if g in maps[0].index]
+    ds.align_with_map(maps[0].index)
 
     class PerfCallback(MetricsRecorder):
         def __init__(self, out_dir: Path, tr_loader, va_loader, te_loader, period: int = 10):
@@ -99,19 +104,19 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
     run_dir = results_dir
     tr_loader = GeoLoader(
         ds,
-        BATCH_SIZE,
+        batch_size,
         sampler=SubsetRandomSampler(ds.train_idx),
         num_workers=0,
     )
     va_loader = GeoLoader(
         ds,
-        BATCH_SIZE,
+        batch_size,
         sampler=SubsetRandomSampler(ds.valid_idx),
         num_workers=0,
     )
     te_loader = GeoLoader(
         ds,
-        BATCH_SIZE,
+        batch_size,
         sampler=SubsetRandomSampler(ds.test_idx),
         num_workers=0,
     )
@@ -119,26 +124,53 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
     callback = PerfCallback(run_dir, tr_loader, va_loader, te_loader, period=10)
     mc = ModelCheckpoint(
         dirpath=run_dir / "checkpoints",
-        monitor="val_loss",
-        mode="min",
+        monitor=args.monitor_metric,
+        mode="max" if args.monitor_metric == "val_auc" else "min",
         save_top_k=1,
         every_n_epochs=10,
         save_last=True,
     )
-    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=LEARNING_RATE)
+
+    optim_cfg = {
+        "opt": args.optimizer,
+        "lr": lr,
+        "wd": args.weight_decay,
+        "scheduler": args.scheduler,
+        "monitor": args.monitor_metric,
+    }
+
+    loss_cfg = {
+        "main": args.main_loss_weight,
+        "aux": args.aux_loss_weight,
+    }
+    if args.per_layer_weights:
+        loss_cfg["per_layer"] = [float(x) for x in args.per_layer_weights.split(",")]
+
+    model = PNet(
+        layers=maps,
+        num_genes=maps[0].shape[0],
+        lr=lr,
+        norm_type=args.norm_type,
+        dropout_rate=args.dropout_rate,
+        input_dropout=args.input_dropout,
+        loss_cfg=loss_cfg,
+        optim_cfg=optim_cfg,
+    )
+
     init_loss, init_acc, init_auc = eval_metrics(model, va_loader)
     print(
         f"      Start: loss={init_loss:.4f} acc={init_acc:.4f} auc={init_auc:.4f}"
     )
+
     trainer = pl.Trainer(
         accelerator="auto",
         deterministic=True,
         max_epochs=200,
         callbacks=[
             pl.callbacks.EarlyStopping(
-                "val_loss",
+                args.monitor_metric,
                 patience=30,
-                mode="min",
+                mode="max" if args.monitor_metric == "val_auc" else "min",
                 verbose=False,
                 min_delta=0.01,
             ),
@@ -148,7 +180,21 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
         ],
         logger=InMemoryLogger(),
         enable_progress_bar=False,
+        gradient_clip_val=args.grad_clip_val,
     )
+
+    if args.auto_lr_find or args.auto_scale_bs:
+        tuner = pl.tuner.Tuner(trainer)
+        if args.auto_lr_find:
+            lr_finder = tuner.lr_find(model, train_dataloaders=tr_loader, val_dataloaders=va_loader)
+            lr = lr_finder.suggestion()
+            model.lr = lr
+        if args.auto_scale_bs:
+            new_bs = tuner.scale_batch_size(model, train_dataloaders=tr_loader, val_dataloaders=va_loader, init_val=batch_size)
+            batch_size = new_bs
+            tr_loader = GeoLoader(ds, batch_size, sampler=SubsetRandomSampler(ds.train_idx), num_workers=0)
+            va_loader = GeoLoader(ds, batch_size, sampler=SubsetRandomSampler(ds.valid_idx), num_workers=0)
+            te_loader = GeoLoader(ds, batch_size, sampler=SubsetRandomSampler(ds.test_idx), num_workers=0)
 
     trainer.fit(model, tr_loader, va_loader)
     fin_loss, fin_acc, fin_auc = eval_metrics(model, va_loader)
@@ -162,17 +208,23 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
 
     (results_dir / "optimal").mkdir(parents=True, exist_ok=True)
     torch.save(state, results_dir / "optimal" / "trained_model.pth")
-    with open(results_dir / "optimal" / "best_params.json", "w") as f:
-        json.dump({"learning_rate": LEARNING_RATE, "batch_size": BATCH_SIZE}, f)
 
-    return maps
+    return maps, fin_loss, fin_auc, {
+        "learning_rate": lr,
+        "batch_size": batch_size,
+        "optimizer": args.optimizer,
+        "scheduler": args.scheduler,
+        "norm_type": args.norm_type,
+        "dropout_rate": args.dropout_rate,
+        "loss_cfg": loss_cfg,
+    }, state
 
-def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: str):
+def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: str, args=None):
     ds = PnetSimExpDataSet(root=str(data_dir), num_features=1)
     ds.split_index_by_file(
         train_fp=data_dir / 'splits' / 'training_set_0.csv',
         valid_fp=data_dir / 'splits' / 'validation_set.csv',
-        test_fp = data_dir / 'splits' / 'test_set.csv',
+        test_fp=data_dir / 'splits' / 'test_set.csv',
     )
     maps = get_layer_maps(
         genes=list(ds.node_index),
@@ -181,8 +233,15 @@ def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: s
         direction='root_to_leaf',
         add_unk_genes=False
     )
-    ds.node_index = [g for g in ds.node_index if g in maps[0].index]
-    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=0.001)
+    ds.align_with_map(maps[0].index)
+    model = PNet(
+        layers=maps,
+        num_genes=maps[0].shape[0],
+        lr=0.001,
+        norm_type=args.norm_type if args else "batchnorm",
+        dropout_rate=args.dropout_rate if args else 0.1,
+        input_dropout=args.input_dropout if args else 0.5,
+    )
     state = torch.load(results_dir / 'optimal' / 'trained_model.pth', map_location='cpu')
     if isinstance(state, dict) and 'state_dict' in state:
         state = state['state_dict']
@@ -232,6 +291,25 @@ def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: s
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Run experiment 1")
     ap.add_argument("--exp", type=int, default=1, help="Experiment number")
+    ap.add_argument("--learning_rate", type=float, default=1e-3)
+    ap.add_argument("--batch_size", type=int, default=32)
+    ap.add_argument("--optimizer", choices=["adam", "adamw"], default="adam")
+    ap.add_argument(
+        "--scheduler", choices=["none", "cosine", "plateau", "onecycle"], default="none"
+    )
+    ap.add_argument("--weight_decay", type=float, default=0.0)
+    ap.add_argument("--monitor_metric", choices=["val_loss", "val_auc"], default="val_loss")
+    ap.add_argument("--norm_type", choices=["batchnorm", "layernorm", "none"], default="batchnorm")
+    ap.add_argument("--dropout_rate", type=float, default=0.1)
+    ap.add_argument("--input_dropout", type=float, default=0.5)
+    ap.add_argument("--main_loss_weight", type=float, default=1.0)
+    ap.add_argument("--aux_loss_weight", type=float, default=0.0)
+    ap.add_argument("--per_layer_weights", type=str, default=None)
+    ap.add_argument("--auto_lr_find", action="store_true")
+    ap.add_argument("--auto_scale_bs", action="store_true")
+    ap.add_argument("--lr_list", type=float, nargs="*")
+    ap.add_argument("--bs_list", type=int, nargs="*")
+    ap.add_argument("--grad_clip_val", type=float, default=0.0)
     args = ap.parse_args()
     EXP_NUM = args.exp
 
@@ -240,5 +318,38 @@ if __name__ == "__main__":
     scenario_id = Path(f"b{PATHWAY_LINEAR_EFFECT}_g{PATHWAY_NONLINEAR_EFFECT}") / "1"
     data_dir = Path("data") / f"experiment{EXP_NUM}" / scenario_id
     results_dir = Path("results") / f"experiment{EXP_NUM}" / scenario_id
-    maps = train_dataset(data_dir, results_dir, reactome)
-    explain_dataset(data_dir, results_dir, reactome, maps, METHOD)
+    if args.lr_list or args.bs_list:
+        lrs = args.lr_list or [args.learning_rate]
+        bss = args.bs_list or [args.batch_size]
+        summary = []
+        best = None
+        best_maps = None
+        best_cfg = None
+        best_state = None
+        for lr in lrs:
+            for bs in bss:
+                maps, vloss, vauc, cfg, state = train_dataset(data_dir, results_dir, reactome, lr, bs, args)
+                summary.append({"lr": lr, "batch_size": bs, "val_loss": vloss, "val_auc": vauc})
+                score = vauc if args.monitor_metric == "val_auc" else vloss
+                better = (best is None) or (
+                    score > best if args.monitor_metric == "val_auc" else score < best
+                )
+                if better:
+                    best = score
+                    best_maps = maps
+                    best_cfg = cfg
+                    best_state = state
+        pd.DataFrame(summary).to_csv(results_dir / "summary.csv", index=False)
+        maps = best_maps
+        (results_dir / "optimal").mkdir(parents=True, exist_ok=True)
+        torch.save(best_state, results_dir / "optimal" / "trained_model.pth")
+        with open(results_dir / "optimal" / "best_params.json", "w") as f:
+            json.dump(best_cfg, f)
+    else:
+        maps, _, _, cfg, state = train_dataset(
+            data_dir, results_dir, reactome, args.learning_rate, args.batch_size, args
+        )
+        with open(results_dir / "optimal" / "best_params.json", "w") as f:
+            json.dump(cfg, f)
+
+    explain_dataset(data_dir, results_dir, reactome, maps, METHOD, args)

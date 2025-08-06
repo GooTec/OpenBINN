@@ -46,6 +46,14 @@ class PnetSimExpDataSet(Dataset):
         self.num_train_samples = self.num_samples - self.num_test_samples - self.num_valid_samples
         self.split_index_by_rng(test_seed=test_seed, valid_seed=valid_seed)
 
+    def align_with_map(self, gene_order):
+        """Reorder feature columns to match ``gene_order``."""
+        missing = set(gene_order) - set(self.node_index)
+        assert not missing, f"genes missing in dataset: {missing}"
+        idx = [self.node_index.index(g) for g in gene_order]
+        self.x = self.x[:, idx, :]
+        self.node_index = list(gene_order)
+
     def split_index_by_rng(self, test_seed, valid_seed):
         rng_test = np.random.default_rng(test_seed)
         rng_valid = np.random.default_rng(valid_seed)
@@ -70,16 +78,19 @@ class PnetSimExpDataSet(Dataset):
             return df.index
 
         patients_train = list(_get_ids(train_set))
-        both = set(self.subject_id).intersection(patients_train)
-        self.train_idx = [self.subject_id.index(x) for x in both]
+        missing = set(patients_train) - set(self.subject_id)
+        assert not missing, f"unknown ids in train split: {missing}"
+        self.train_idx = [self.subject_id.index(x) for x in patients_train]
 
         patients_valid = list(_get_ids(valid_set))
-        both = set(self.subject_id).intersection(patients_valid)
-        self.valid_idx = [self.subject_id.index(x) for x in both]
+        missing = set(patients_valid) - set(self.subject_id)
+        assert not missing, f"unknown ids in valid split: {missing}"
+        self.valid_idx = [self.subject_id.index(x) for x in patients_valid]
 
         patients_test = list(_get_ids(test_set))
-        both = set(self.subject_id).intersection(patients_test)
-        self.test_idx = [self.subject_id.index(x) for x in both]
+        missing = set(patients_test) - set(self.subject_id)
+        assert not missing, f"unknown ids in test split: {missing}"
+        self.test_idx = [self.subject_id.index(x) for x in patients_test]
 
         assert len(self.train_idx) == len(set(self.train_idx))
         assert len(self.valid_idx) == len(set(self.valid_idx))
