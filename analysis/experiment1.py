@@ -33,16 +33,14 @@ from openbinn.binn.data import (
 from openbinn.explainer import Explainer
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import json
-import shutil
 
 
-PATHWAY_LINEAR_EFFECT_LIST = [0.5, 1.0, 2.0, 4.0]
-PATHWAY_NONLINEAR_EFFECT_LIST = [0.5, 1.0, 2.0, 4.0]
-METHODS = ["deeplift", "ig", "gradshap", "itg", "shap"]
-LR_LIST = [1e-3, 5e-4, 1e-4]
-BATCH_LIST = [16, 32]
+PATHWAY_LINEAR_EFFECT = 2.0
+PATHWAY_NONLINEAR_EFFECT = 2.0
+METHOD = "deeplift"
+LEARNING_RATE = 1e-3
+BATCH_SIZE = 32
 
 class ModelWrapper(torch.nn.Module):
     def __init__(self, model: PNet, target_layer: int):
@@ -55,12 +53,12 @@ class ModelWrapper(torch.nn.Module):
         outs = self.model(x)
         return outs[self.target_layer - 1]
 
-def generate(pathway_linear_effect: float, pathway_nonlinear_effect: float, nonlinear: bool = True) -> None:
+def generate(nonlinear: bool = True) -> None:
     cmd = [
         "python",
         "generate_simulations.py",
-        "--pathway_linear_effect", str(pathway_linear_effect),
-        "--pathway_nonlinear_effect", str(pathway_nonlinear_effect),
+        "--pathway_linear_effect", str(PATHWAY_LINEAR_EFFECT),
+        "--pathway_nonlinear_effect", str(PATHWAY_NONLINEAR_EFFECT),
         "--n_sim", "1",
         "--exp", str(EXP_NUM),
     ]
@@ -98,104 +96,74 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
         def __init__(self, out_dir: Path, tr_loader, va_loader, te_loader, period: int = 10):
             super().__init__(out_dir, tr_loader, va_loader, te_loader, period)
 
-    best_score = float("inf")
-    best_state = None
-    best_params = None
-    best_tmp_dir = None
+    run_dir = results_dir
+    tr_loader = GeoLoader(
+        ds,
+        BATCH_SIZE,
+        sampler=SubsetRandomSampler(ds.train_idx),
+        num_workers=0,
+    )
+    va_loader = GeoLoader(
+        ds,
+        BATCH_SIZE,
+        sampler=SubsetRandomSampler(ds.valid_idx),
+        num_workers=0,
+    )
+    te_loader = GeoLoader(
+        ds,
+        BATCH_SIZE,
+        sampler=SubsetRandomSampler(ds.test_idx),
+        num_workers=0,
+    )
 
-    for lr in LR_LIST:
-        for bs in BATCH_LIST:
-            run_dir = results_dir / f"lr{lr}_bs{bs}"
-            tr_loader = GeoLoader(
-                ds,
-                bs,
-                sampler=SubsetRandomSampler(ds.train_idx),
-                num_workers=0,
-            )
-            va_loader = GeoLoader(
-                ds,
-                bs,
-                sampler=SubsetRandomSampler(ds.valid_idx),
-                num_workers=0,
-            )
-            te_loader = GeoLoader(
-                ds,
-                bs,
-                sampler=SubsetRandomSampler(ds.test_idx),
-                num_workers=0,
-            )
-
-            callback = PerfCallback(run_dir, tr_loader, va_loader, te_loader, period=10)
-            mc = ModelCheckpoint(
-                dirpath=run_dir / "checkpoints",
-                monitor="val_loss",
+    callback = PerfCallback(run_dir, tr_loader, va_loader, te_loader, period=10)
+    mc = ModelCheckpoint(
+        dirpath=run_dir / "checkpoints",
+        monitor="val_loss",
+        mode="min",
+        save_top_k=1,
+        every_n_epochs=10,
+        save_last=True,
+    )
+    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=LEARNING_RATE)
+    init_loss, init_acc, init_auc = eval_metrics(model, va_loader)
+    print(
+        f"      Start: loss={init_loss:.4f} acc={init_acc:.4f} auc={init_auc:.4f}"
+    )
+    trainer = pl.Trainer(
+        accelerator="auto",
+        deterministic=True,
+        max_epochs=200,
+        callbacks=[
+            pl.callbacks.EarlyStopping(
+                "val_loss",
+                patience=30,
                 mode="min",
-                save_top_k=1,
-                every_n_epochs=10,
-                save_last=True,
-            )
-            model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=lr)
-            init_loss, init_acc, init_auc = eval_metrics(model, va_loader)
-            print(
-                f"      Start: loss={init_loss:.4f} acc={init_acc:.4f} auc={init_auc:.4f}"
-            )
-            trainer = pl.Trainer(
-                accelerator="auto",
-                deterministic=True,
-                max_epochs=200,
-                callbacks=[
-                    pl.callbacks.EarlyStopping(
-                        "val_loss",
-                        patience=30,
-                        mode="min",
-                        verbose=False,
-                        min_delta=0.01,
-                    ),
-                    callback,
-                    GradNormPrinter(),
-                    mc,
-                ],
-                logger=InMemoryLogger(),
-                enable_progress_bar=False,
-            )
+                verbose=False,
+                min_delta=0.01,
+            ),
+            callback,
+            GradNormPrinter(),
+            mc,
+        ],
+        logger=InMemoryLogger(),
+        enable_progress_bar=False,
+    )
 
-            trainer.fit(model, tr_loader, va_loader)
-            fin_loss, fin_acc, fin_auc = eval_metrics(model, va_loader)
-            print(
-                f"      End  : loss={fin_loss:.4f} acc={fin_acc:.4f} auc={fin_auc:.4f}"
-            )
+    trainer.fit(model, tr_loader, va_loader)
+    fin_loss, fin_acc, fin_auc = eval_metrics(model, va_loader)
+    print(
+        f"      End  : loss={fin_loss:.4f} acc={fin_acc:.4f} auc={fin_auc:.4f}"
+    )
 
-            if mc.best_model_score is not None:
-                score = mc.best_model_score.item()
-                if score < best_score:
-                    best_score = score
-                    best_state = torch.load(mc.best_model_path, map_location="cpu")
-                    if isinstance(best_state, dict) and "state_dict" in best_state:
-                        best_state = best_state["state_dict"]
-                    best_params = {"learning_rate": lr, "batch_size": bs}
-                    best_tmp_dir = run_dir
-
-    if best_state is None:
-        raise RuntimeError("Hyperparameter search failed to produce a model")
+    state = torch.load(mc.best_model_path, map_location="cpu") if mc.best_model_path else model.state_dict()
+    if isinstance(state, dict) and "state_dict" in state:
+        state = state["state_dict"]
 
     (results_dir / "optimal").mkdir(parents=True, exist_ok=True)
-    torch.save(best_state, results_dir / "optimal" / "trained_model.pth")
+    torch.save(state, results_dir / "optimal" / "trained_model.pth")
     with open(results_dir / "optimal" / "best_params.json", "w") as f:
-        json.dump(best_params, f)
-
-    if best_tmp_dir and best_tmp_dir != results_dir:
-        src_perf = best_tmp_dir / "performance"
-        src_vis = best_tmp_dir / "visualize"
-        if src_perf.exists():
-            dst_perf = results_dir / "performance"
-            if dst_perf.exists():
-                shutil.rmtree(dst_perf)
-            shutil.copytree(src_perf, dst_perf)
-        if src_vis.exists():
-            dst_vis = results_dir / "visualize"
-            if dst_vis.exists():
-                shutil.rmtree(dst_vis)
-            shutil.copytree(src_vis, dst_vis)
+        json.dump({"learning_rate": LEARNING_RATE, "batch_size": BATCH_SIZE}, f)
 
     return maps
 
@@ -268,12 +236,9 @@ if __name__ == "__main__":
     EXP_NUM = args.exp
 
     reactome = load_reactome_once()
-    for ple in PATHWAY_LINEAR_EFFECT_LIST:
-        for pne in PATHWAY_NONLINEAR_EFFECT_LIST:
-            generate(ple, pne, nonlinear=True)
-            scenario_id = Path(f"b{ple}_g{pne}") / "1"
-            data_dir = Path("data") / f"experiment{EXP_NUM}" / scenario_id
-            results_dir = Path("results") / f"experiment{EXP_NUM}" / scenario_id
-            maps = train_dataset(data_dir, results_dir, reactome)
-            for method in METHODS:
-                explain_dataset(data_dir, results_dir, reactome, maps, method)
+    generate(nonlinear=True)
+    scenario_id = Path(f"b{PATHWAY_LINEAR_EFFECT}_g{PATHWAY_NONLINEAR_EFFECT}") / "1"
+    data_dir = Path("data") / f"experiment{EXP_NUM}" / scenario_id
+    results_dir = Path("results") / f"experiment{EXP_NUM}" / scenario_id
+    maps = train_dataset(data_dir, results_dir, reactome)
+    explain_dataset(data_dir, results_dir, reactome, maps, METHOD)

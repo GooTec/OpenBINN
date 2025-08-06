@@ -17,8 +17,8 @@ OpenBINN provides a unified folder structure and tools to train, interpret, and 
 -   **Interpretability Tools**
     Integration of explainability methods (e.g., attention- or path-informed attribution) with utility functions for visualization and summary.
 
--   **Statistical Validation**
-    Built-in pipelines for bootstrap confidence intervals, permutation tests (gene and label), and empirical power estimation to quantify uncertainty and significance of model interpretations.
+  -   **Statistical Validation**
+      Infrastructure for future extensions to quantify uncertainty and significance of model interpretations.
 
 -   **Reproducibility**
     Configuration-driven experiments (YAML/JSON), version-controlled environment files, and automatic logging of parameters and random seeds.

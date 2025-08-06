@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 # ────────── 파라미터 ──────────
 RNG_BASE_SEED = 42
 N_SIM         = 100     # i = 1‒100
-N_VARIANTS    = 100     # b = 1‒100
 PATHWAY_LINEAR_EFFECT, PATHWAY_NONLINEAR_EFFECT = 2, 2  # default values, overridden via CLI
 DELTAS        = (0.5, 0.25)
 OUT_ROOT      = Path("./data")
@@ -163,26 +162,10 @@ def make_splits(y, dst: Path, seed=42):
     (df(va)).to_csv(dst/"validation_set.csv",  index=True)
     (df(te)).to_csv(dst/"test_set.csv",        index=True)
 
-def make_bootstrap(Xm, Xc, y, rng):
-    n = len(Xm); pos = rng.choice(n, size=n, replace=True)
-    return (pd.DataFrame(Xm.values[pos], columns=Xm.columns, index=Xm.index),
-            pd.DataFrame(Xc.values[pos], columns=Xc.columns, index=Xc.index),
-            pd.Series(y.values[pos], index=y.index, name=y.name))
-
-def make_gene_perm(Xm, Xc, y, rng):
-    perm = rng.permutation(Xm.columns)
-    Xm2, Xc2 = Xm.copy(), Xc.copy()
-    Xm2.columns = Xc2.columns = perm
-    return Xm2, Xc2, y
-
-def make_label_perm(Xm, Xc, y, rng):
-    yp = pd.Series(rng.permutation(y.values), index=y.index, name="response")
-    return Xm, Xc, yp
-
 def main(start_sim: int = 1, end_sim: int = N_SIM, *,
          pathway_nonlinear: bool = False, gene_effect_sigma: float = 20.0,
          prev: float = 0.5):
-    print("▶ Generating simulations & variants …")
+    print("▶ Generating simulations …")
     indep = independent_paths(pathways)
     for i in range(start_sim, end_sim + 1):
         rng_sim = np.random.RandomState(RNG_BASE_SEED + i)
@@ -242,42 +225,12 @@ def main(start_sim: int = 1, end_sim: int = N_SIM, *,
         with open(sim_dir/"intercept.txt", "w") as fh:
             fh.write(str(c))
 
-        for b in range(1, N_VARIANTS+1):
-            bs_Xm, bs_Xc, bs_y = make_bootstrap(
-                mutation, cnv_aligned, y,
-                np.random.RandomState(RNG_BASE_SEED + i*10_000 + b)
-            )
-            bs_dir = sim_dir/"bootstrap"/f"{b}"
-            save_triplet(bs_dir, bs_Xm, bs_Xc, bs_y)
-            (bs_dir/"selected_genes.csv").write_text(SELECTED_GENES_TXT)
-            make_splits(bs_y, bs_dir/"splits")
-
-            gp_Xm, gp_Xc, gp_y = make_gene_perm(
-                mutation, cnv_aligned, y,
-                np.random.RandomState(RNG_BASE_SEED + i*20_000 + b)
-            )
-            gp_dir = sim_dir/"gene-permutation"/f"{b}"
-            save_triplet(gp_dir, gp_Xm, gp_Xc, gp_y)
-            gp_dir.joinpath("selected_genes.csv").write_text(
-                "genes\n" + "\n".join(gp_Xm.columns)
-            )
-            make_splits(gp_y, gp_dir/"splits")
-
-            lp_Xm, lp_Xc, lp_y = make_label_perm(
-                mutation, cnv_aligned, y,
-                np.random.RandomState(RNG_BASE_SEED + i*30_000 + b)
-            )
-            lp_dir = sim_dir/"label-permutation"/f"{b}"
-            save_triplet(lp_dir, lp_Xm, lp_Xc, lp_y)
-            (lp_dir/"selected_genes.csv").write_text(SELECTED_GENES_TXT)
-            make_splits(lp_y, lp_dir/"splits")
-
         if i == 1 or i % 10 == 0:
             fpr, tpr, _ = roc_curve(y, p)
             auc_val = auc(fpr, tpr)
             print(f"  Sim {i:3d}| prev={y.mean():.3f}  AUC={auc_val:.3f}")
 
-    print("✓ 모든 시뮬레이션·100개 변형·splits 완료.")
+    print("✓ 모든 시뮬레이션 데이터 및 splits 완료.")
 
 
 if __name__ == "__main__":
