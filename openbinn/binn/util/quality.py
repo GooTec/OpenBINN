@@ -107,19 +107,15 @@ def eval_metrics(model: torch.nn.Module, loader: Iterable) -> tuple[float, float
         for x, y in loader:
             x = x.to(device)
             y = y.to(device)
-            # compute loss using the model's step function
-            out_dict = model.step((x, y), "val")
+            # compute loss using the model's step function without logging
+            out_dict = model.step((x, y), "val", log=False)
             loss = out_dict["loss"]
             correct += out_dict["correct"].item() if isinstance(out_dict["correct"], torch.Tensor) else out_dict["correct"]
             total += out_dict["total"]
             total_loss += loss.item() * out_dict["total"]
 
-            out = model(x)
-            if not torch.is_tensor(out):
-                out = out[-1]
-            prob = torch.sigmoid(out.view(-1))
-            all_probs.append(prob.detach().cpu())
-            all_true.append(y.detach().cpu())
+            all_probs.append(out_dict["probs"].detach().cpu())
+            all_true.append(out_dict["true"].detach().cpu())
 
     all_probs = torch.cat(all_probs).numpy()
     all_true = torch.cat(all_true).numpy()

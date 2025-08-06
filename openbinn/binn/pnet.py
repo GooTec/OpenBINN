@@ -158,8 +158,14 @@ class PNet(BaseNet):
 
         return y
 
-    def step(self, batch, kind: str) -> dict:
-        """Step function executed by lightning trainer module."""
+    def step(self, batch, kind: str, log: bool = True) -> dict:
+        """Step function executed by lightning trainer module.
+
+        The ``log`` flag controls whether per-batch metrics are logged with
+        PyTorch Lightning's ``self.log``. When calling this method outside of a
+        Lightning loop (e.g., in manual evaluation), set ``log=False`` to avoid
+        `MisconfigurationException` errors.
+        """
         # run the model and calculate loss
         x, y_true = batch
         y_hat = self(x)
@@ -191,8 +197,9 @@ class PNet(BaseNet):
         correct = ((probs > 0.5).flatten() == y_true.flatten()).sum()
         total = len(y_true)
 
-        self.log(f"{kind}_main_loss", main_loss, batch_size=total)
-        self.log(f"{kind}_aux_loss", aux_loss, batch_size=total)
+        if log:
+            self.log(f"{kind}_main_loss", main_loss, batch_size=total)
+            self.log(f"{kind}_aux_loss", aux_loss, batch_size=total)
 
         batch_dict = {
             "loss": loss,
