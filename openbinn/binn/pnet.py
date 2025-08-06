@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch import nn
 from torch.nn import Linear, ReLU
 import pandas as pd
+from typing import Optional, Dict, Any
 
 from .base_net import BaseNet
 from .util import scatter_nd
@@ -76,11 +77,11 @@ class PNet(BaseNet):
         class_weights: bool = True,
         scheduler: str = "lambda",
         diversity_lambda: float = 0.0,
-        loss_cfg: dict | None = None,
+        loss_cfg: Optional[Dict[str, Any]] = None,
         norm_type: str = "batchnorm",
         dropout_rate: float = 0.1,
         input_dropout: float = 0.5,
-        optim_cfg: dict | None = None,
+        optim_cfg: Optional[Dict[str, Any]] = None,
     ):
         """Initialize.
         :param layers: list of pandas dataframes describing the pnet masks for each
