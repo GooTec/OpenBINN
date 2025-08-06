@@ -38,8 +38,8 @@ import json
 import shutil
 
 
-BETA_LIST = [0.5, 1.0, 2.0, 4.0]
-GAMMA_LIST = [0.5, 1.0, 2.0, 4.0]
+PATHWAY_LINEAR_EFFECT_LIST = [0.5, 1.0, 2.0, 4.0]
+PATHWAY_NONLINEAR_EFFECT_LIST = [0.5, 1.0, 2.0, 4.0]
 METHODS = ["deeplift", "ig", "gradshap", "itg", "shap"]
 LR_LIST = [1e-3, 5e-4, 1e-4]
 BATCH_LIST = [16, 32]
@@ -55,12 +55,12 @@ class ModelWrapper(torch.nn.Module):
         outs = self.model(x)
         return outs[self.target_layer - 1]
 
-def generate(beta: float, gamma: float, nonlinear: bool = True) -> None:
+def generate(pathway_linear_effect: float, pathway_nonlinear_effect: float, nonlinear: bool = True) -> None:
     cmd = [
         "python",
         "generate_simulations.py",
-        "--beta", str(beta),
-        "--gamma", str(gamma),
+        "--pathway_linear_effect", str(pathway_linear_effect),
+        "--pathway_nonlinear_effect", str(pathway_nonlinear_effect),
         "--n_sim", "1",
         "--exp", str(EXP_NUM),
     ]
@@ -268,10 +268,10 @@ if __name__ == "__main__":
     EXP_NUM = args.exp
 
     reactome = load_reactome_once()
-    for beta in BETA_LIST:
-        for gamma in GAMMA_LIST:
-            generate(beta, gamma, nonlinear=True)
-            scenario_id = Path(f"b{beta}_g{gamma}") / "1"
+    for ple in PATHWAY_LINEAR_EFFECT_LIST:
+        for pne in PATHWAY_NONLINEAR_EFFECT_LIST:
+            generate(ple, pne, nonlinear=True)
+            scenario_id = Path(f"b{ple}_g{pne}") / "1"
             data_dir = Path("data") / f"experiment{EXP_NUM}" / scenario_id
             results_dir = Path("results") / f"experiment{EXP_NUM}" / scenario_id
             maps = train_dataset(data_dir, results_dir, reactome)

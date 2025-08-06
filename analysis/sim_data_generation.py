@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 RNG_BASE_SEED = 42
 N_SIM         = 100     # i = 1‒100
 N_VARIANTS    = 100     # b = 1‒100
-BETA, GAMMA   = 2, 2  # default values, can be overridden via CLI
+PATHWAY_LINEAR_EFFECT, PATHWAY_NONLINEAR_EFFECT = 2, 2  # default values, overridden via CLI
 DELTAS        = (0.5, 0.25)
 OUT_ROOT      = Path("./data")
 
@@ -57,10 +57,18 @@ mutation, cnv_del, cnv_amp, cnv_aligned = (
     df.loc[common_idx] for df in (mutation, cnv_del, cnv_amp, cnv_aligned)
 )
 
-w = 1.0
-GA = w*mutation + w*cnv_del + w*cnv_amp
+omics_effect = {
+    "mutation": 1.0,
+    "cnv_del": 1.0,
+    "cnv_amp": 1.0,
+}
+GA = (
+    omics_effect["mutation"] * mutation
+    + omics_effect["cnv_del"] * cnv_del
+    + omics_effect["cnv_amp"] * cnv_amp
+)
 X_true = GA.loc[:, GA.columns.intersection(true_genes)]
-alpha  = np.ones(X_true.shape[1])
+gene_effect = np.ones(X_true.shape[1])
 
 SELECTED_GENES_TXT = "genes\n" + "\n".join(mutation.columns)
 
@@ -172,7 +180,7 @@ def make_label_perm(Xm, Xc, y, rng):
     return Xm, Xc, yp
 
 def main(start_sim: int = 1, end_sim: int = N_SIM, *,
-         pathway_nonlinear: bool = False, alpha_sigma: float = 20.0,
+         pathway_nonlinear: bool = False, gene_effect_sigma: float = 20.0,
          prev: float = 0.5):
     print("▶ Generating simulations & variants …")
     indep = independent_paths(pathways)
@@ -180,9 +188,9 @@ def main(start_sim: int = 1, end_sim: int = N_SIM, *,
         rng_sim = np.random.RandomState(RNG_BASE_SEED + i)
 
         if pathway_nonlinear:
-            # quadratic pathway model using provided beta/gamma
-            S = X_true.values @ alpha
-            p1 = BETA * S + GAMMA * (S ** 2)
+            # quadratic pathway model using provided pathway effects
+            S = X_true.values @ gene_effect
+            p1 = PATHWAY_LINEAR_EFFECT * S + PATHWAY_NONLINEAR_EFFECT * (S ** 2)
             p2 = DELTAS[0] * p1
             p3 = DELTAS[1] * p2
             eta = p1 + p2 + p3
@@ -199,7 +207,7 @@ def main(start_sim: int = 1, end_sim: int = N_SIM, *,
             genes = sorted({g for p in pool for g in pathways[p] if g in mutation.columns})
             Xm_sel = mutation[genes]
 
-            a = {g: (rng_sim.normal(0, alpha_sigma) if g in pathways[true_p] else 0.0)
+            a = {g: (rng_sim.normal(0, gene_effect_sigma) if g in pathways[true_p] else 0.0)
                  for g in genes}
             a_vec = np.array([a[g] for g in genes])
             additive = Xm_sel.values.dot(a_vec)
@@ -220,7 +228,7 @@ def main(start_sim: int = 1, end_sim: int = N_SIM, *,
             y = pd.Series(rng_sim.binomial(1, p), index=Xm_sel.index, name="response")
             diag_df = pd.DataFrame({"id": Xm_sel.index, "eta": eta, "prob": p, "response": y.values})
 
-        sim_dir = OUT_ROOT / f"b{BETA}_g{GAMMA}" / f"{i}"
+        sim_dir = OUT_ROOT / f"b{PATHWAY_LINEAR_EFFECT}_g{PATHWAY_NONLINEAR_EFFECT}" / f"{i}"
         sim_dir.mkdir(parents=True, exist_ok=True)
         if pathway_nonlinear:
             genes_for_pca = list(true_genes)
@@ -274,22 +282,24 @@ def main(start_sim: int = 1, end_sim: int = N_SIM, *,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate simulation datasets")
-    parser.add_argument("--beta", type=float, default=BETA)
-    parser.add_argument("--gamma", type=float, default=GAMMA)
+    parser.add_argument("--pathway_linear_effect", "--beta", dest="pathway_linear_effect",
+                        type=float, default=PATHWAY_LINEAR_EFFECT)
+    parser.add_argument("--pathway_nonlinear_effect", "--gamma", dest="pathway_nonlinear_effect",
+                        type=float, default=PATHWAY_NONLINEAR_EFFECT)
     parser.add_argument("--start_sim", type=int, default=1,
                         help="Start index of simulation (inclusive)")
     parser.add_argument("--end_sim", type=int, default=N_SIM,
                         help="End index of simulation (inclusive)")
     parser.add_argument("--pathway_nonlinear", action="store_true",
                         help="Use pathway-based nonlinear outcome generation")
-    parser.add_argument("--alpha_sigma", type=float, default=20.0,
+    parser.add_argument("--gene_effect_sigma", type=float, default=20.0,
                         help="Stddev of gene coefficients for true pathway")
     parser.add_argument("--prev", type=float, default=0.5,
                         help="Target prevalence when calibrating intercept")
     args = parser.parse_args()
-    BETA = args.beta
-    GAMMA = args.gamma
+    PATHWAY_LINEAR_EFFECT = args.pathway_linear_effect
+    PATHWAY_NONLINEAR_EFFECT = args.pathway_nonlinear_effect
     main(args.start_sim, args.end_sim,
          pathway_nonlinear=args.pathway_nonlinear,
-         alpha_sigma=args.alpha_sigma,
+         gene_effect_sigma=args.gene_effect_sigma,
          prev=args.prev)
