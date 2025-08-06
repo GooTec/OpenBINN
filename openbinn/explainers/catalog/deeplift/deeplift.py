@@ -90,9 +90,16 @@ class DeepLift(BaseExplainer):
                 continue
             elif 'intermediate' in name:
                 continue
-            elif target_layer < 7 and 'network' in name and int(name.split('.')[-2]) >= target_layer:
-                # print(target_layer, name)
-                continue
+            elif target_layer < 7 and 'network' in name:
+                parts = name.split('.')
+                idx = None
+                for p in reversed(parts):
+                    if p.isdigit():
+                        idx = int(p)
+                        break
+                if idx is not None and idx >= target_layer:
+                    # print(target_layer, name)
+                    continue
 
             # Initialize LayerDeepLift for the current layer
             layer_dl = LayerDeepLift(self.model, layer)
