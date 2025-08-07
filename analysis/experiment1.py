@@ -272,14 +272,22 @@ def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: s
         print(len(expl_acc), "explanations found for", method)
         for idx, (lname, arrs) in enumerate(expl_acc.items()):
             print(f"Saving {method} layer {tgt} explanation for {lname} ...")
-            if idx >= len(maps):
-                break
             arr = np.concatenate(arrs, axis=0)
             labels = np.concatenate(lab_acc, axis=0)
-            preds  = np.concatenate(pred_acc, axis=0)
-            all_ids= [sid for batch in id_acc for sid in batch]
-            cur_map = maps[idx]
-            cols = list(cur_map.index) if cur_map.shape[0]==arr.shape[1] else list(cur_map.columns)
+            preds = np.concatenate(pred_acc, axis=0)
+            all_ids = [sid for batch in id_acc for sid in batch]
+
+            cols = None
+            for m in maps:
+                if arr.shape[1] == m.shape[0]:
+                    cols = list(m.index)
+                    break
+                if arr.shape[1] == m.shape[1]:
+                    cols = list(m.columns)
+                    break
+            if cols is None:
+                cols = [f"f{i}" for i in range(arr.shape[1])]
+
             df = pd.DataFrame(arr, columns=cols)
             df['label'] = labels
             df['prediction'] = preds
