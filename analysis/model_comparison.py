@@ -46,7 +46,7 @@ def load_dataset(data_dir: Path):
     )
     ds.align_with_map(maps[0].index)
     x = ds.x.view(len(ds.y), -1).numpy()
-    y = ds.y.numpy()
+    y = ds.y.numpy().ravel()
     return ds, x, y
 
 
