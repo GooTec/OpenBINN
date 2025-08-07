@@ -22,7 +22,7 @@ gamma=2.0
 rep=1
 
 data_dir=./data/experiment1/b${beta}_g${gamma}/${rep}
-results_dir=../results/experiment1/b${beta}_g${gamma}/${rep}
+results_dir=./results/experiment1/b${beta}_g${gamma}/${rep}
 
 python experiment1.py
 python model_comparison.py --data-dir "$data_dir" --output-dir "$results_dir/comparison"
