@@ -10,9 +10,10 @@ structure as before::
     data/[experiment{N}/]b{beta}_g{gamma}/{sim}
 
 Use ``--pathway_nonlinear`` to randomly select a pathway and generate outcomes
-using the quadratic score ``beta * S + gamma * S^2`` (with additional pathways
-scaled by δ₁ and δ₂).  A ``pca_plot.png`` is saved showing the first two
-principal components of the true genes and the outcome distribution.
+using the quadratic score ``pathway_linear_effect * S + pathway_nonlinear_effect * S^2``
+(with additional pathways scaled by δ₁ and δ₂).  A ``pca_plot.png`` is saved
+showing the first two principal components of the true genes and the outcome
+distribution.
 """
 
 from __future__ import annotations
@@ -27,8 +28,8 @@ import sim_data_generation as sd
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Generate simulation datasets")
-    ap.add_argument("--beta", type=float, default=2.0)
-    ap.add_argument("--gamma", type=float, default=2.0)
+    ap.add_argument("--pathway_linear_effect", "--beta", dest="pathway_linear_effect", type=float, default=2.0)
+    ap.add_argument("--pathway_nonlinear_effect", "--gamma", dest="pathway_nonlinear_effect", type=float, default=2.0)
     ap.add_argument("--n_sim", type=int, default=sd.N_SIM,
                     help="Number of simulations if --end_sim is not given")
     ap.add_argument("--start_sim", type=int, default=1,
@@ -39,7 +40,7 @@ def main() -> None:
                     help="Experiment number to store data under")
     ap.add_argument("--pathway_nonlinear", action="store_true",
                     help="Use pathway-based nonlinear outcome generation")
-    ap.add_argument("--alpha_sigma", type=float, default=20.0,
+    ap.add_argument("--gene_effect_sigma", type=float, default=20.0,
                     help="Stddev of gene coefficients when nonlinear")
     ap.add_argument("--prev", type=float, default=0.5,
                     help="Target prevalence for intercept calibration")
@@ -50,8 +51,8 @@ def main() -> None:
         raise ValueError("end_sim must be >= start_sim")
 
     # configure sim_data_generation globals
-    sd.BETA = args.beta
-    sd.GAMMA = args.gamma
+    sd.PATHWAY_LINEAR_EFFECT = args.pathway_linear_effect
+    sd.PATHWAY_NONLINEAR_EFFECT = args.pathway_nonlinear_effect
     out_root = Path("./data")
     if args.exp is not None:
         out_root = out_root / f"experiment{args.exp}"
@@ -61,7 +62,7 @@ def main() -> None:
         args.start_sim,
         end,
         pathway_nonlinear=args.pathway_nonlinear,
-        alpha_sigma=args.alpha_sigma,
+        gene_effect_sigma=args.gene_effect_sigma,
         prev=args.prev,
     )
 
@@ -72,7 +73,12 @@ def main() -> None:
         y = pd.read_csv(d / "response.csv", index_col=0)["response"]
         cnv_del = Xc.applymap(lambda v: 1 if v == -2 else 0)
         cnv_amp = Xc.applymap(lambda v: 1 if v == 2 else 0)
-        GA = 1.0 * Xm + 1.0 * cnv_del + 1.0 * cnv_amp
+        omics_effect = {"mutation": 1.0, "cnv_del": 1.0, "cnv_amp": 1.0}
+        GA = (
+            omics_effect["mutation"] * Xm
+            + omics_effect["cnv_del"] * cnv_del
+            + omics_effect["cnv_amp"] * cnv_amp
+        )
         tr = pd.read_csv(d / "splits" / "training_set_0.csv", index_col=0)
         va = pd.read_csv(d / "splits" / "validation_set.csv", index_col=0)
         te = pd.read_csv(d / "splits" / "test_set.csv", index_col=0)
@@ -91,7 +97,7 @@ def main() -> None:
         }).to_csv(d / "logistic_metrics.csv", index=False)
         print(f"  [{d.name}] train AUC={auc_tr:.3f} val AUC={auc_va:.3f} test AUC={auc_te:.3f}")
 
-    scen_root = out_root / f"b{args.beta}_g{args.gamma}"
+    scen_root = out_root / f"b{args.pathway_linear_effect}_g{args.pathway_nonlinear_effect}"
     for i in range(args.start_sim, end + 1):
         eval_dir(scen_root / f"{i}")
 

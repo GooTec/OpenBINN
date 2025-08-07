@@ -17,8 +17,8 @@ OpenBINN provides a unified folder structure and tools to train, interpret, and 
 -   **Interpretability Tools**
     Integration of explainability methods (e.g., attention- or path-informed attribution) with utility functions for visualization and summary.
 
--   **Statistical Validation**
-    Built-in pipelines for bootstrap confidence intervals, permutation tests (gene and label), and empirical power estimation to quantify uncertainty and significance of model interpretations.
+  -   **Statistical Validation**
+      Infrastructure for future extensions to quantify uncertainty and significance of model interpretations.
 
 -   **Reproducibility**
     Configuration-driven experiments (YAML/JSON), version-controlled environment files, and automatic logging of parameters and random seeds.
@@ -58,18 +58,18 @@ python setup.py develop
 1. **Prepare data** by running `bash pull_data.sh`. This downloads the prostate
    dataset into `../data/prostate/` relative to the repository.
 2. **Generate simulation datasets** (optional) using
-   `python analysis/sim_data_generation.py --beta 2 --gamma 2 --pathway_nonlinear`.
+   `python analysis/sim_data_generation.py --pathway_linear_effect 2 --pathway_nonlinear_effect 2 --pathway_nonlinear`.
    The script loads mutation and copy number data, picks a pathway, and
-   creates a nonlinear outcome according to `beta·S + gamma·S²` where `S` is the
-   sum of its genes. Additional pathways scaled by δ₁ and δ₂ are included as in
-   the original study. A `pca_plot.png` visualizes separation of the true
+   creates a nonlinear outcome according to `pathway_linear_effect·S + pathway_nonlinear_effect·S²`
+   where `S` is the sum of its genes. Additional pathways scaled by δ₁ and δ₂ are
+   included as in the original study. A `pca_plot.png` visualizes separation of the true
    pathway genes with the label distribution shown alongside. The intercept is
    calibrated so that the generated labels have roughly 50% prevalence, and a
    `predictor_table.csv` in each scenario lists the linear predictor, calibrated
    probability, and outcome for every sample. A logistic regression sanity check
    is run after generation and the AUC scores are stored in
-   `logistic_metrics.csv`. Adjust `--beta` and `--gamma` or omit the flag for the
-   linear baseline.
+   `logistic_metrics.csv`. Adjust `--pathway_linear_effect` and `--pathway_nonlinear_effect`
+   or omit the flag for the linear baseline.
 3. **Edit** an experiment config in `configs/`, specifying model type, dataset paths, and analysis options.
 4. **Run** training and evaluation:
 

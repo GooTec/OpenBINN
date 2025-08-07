@@ -90,9 +90,16 @@ class DeepLift(BaseExplainer):
                 continue
             elif 'intermediate' in name:
                 continue
-            elif target_layer < 7 and 'network' in name and int(name.split('.')[-2]) >= target_layer:
-                # print(target_layer, name)
-                continue
+            elif target_layer < 7 and 'network' in name:
+                # Some module names include the string "network" but lack an
+                # adjacent numeric index (e.g., "network.network").  Previous
+                # logic attempted to access the presumed index directly and
+                # crashed when the segment was non-numeric.  Here we scan the
+                # full name for any numeric components and use the largest one
+                # to decide whether to skip the layer.
+                digits = [int(p) for p in name.split('.') if p.isdigit()]
+                if digits and max(digits) >= target_layer:
+                    continue
 
             # Initialize LayerDeepLift for the current layer
             layer_dl = LayerDeepLift(self.model, layer)

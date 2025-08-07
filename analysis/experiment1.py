@@ -33,16 +33,12 @@ from openbinn.binn.data import (
 from openbinn.explainer import Explainer
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import json
-import shutil
 
 
-BETA_LIST = [0.5, 1.0, 2.0, 4.0]
-GAMMA_LIST = [0.5, 1.0, 2.0, 4.0]
-METHODS = ["deeplift", "ig", "gradshap", "itg", "shap"]
-LR_LIST = [1e-3, 5e-4, 1e-4]
-BATCH_LIST = [16, 32]
+PATHWAY_LINEAR_EFFECT = 2.0
+PATHWAY_NONLINEAR_EFFECT = 2.0
+METHOD = "deeplift"
 
 class ModelWrapper(torch.nn.Module):
     def __init__(self, model: PNet, target_layer: int):
@@ -55,12 +51,12 @@ class ModelWrapper(torch.nn.Module):
         outs = self.model(x)
         return outs[self.target_layer - 1]
 
-def generate(beta: float, gamma: float, nonlinear: bool = True) -> None:
+def generate(nonlinear: bool = True) -> None:
     cmd = [
         "python",
         "generate_simulations.py",
-        "--beta", str(beta),
-        "--gamma", str(gamma),
+        "--pathway_linear_effect", str(PATHWAY_LINEAR_EFFECT),
+        "--pathway_nonlinear_effect", str(PATHWAY_NONLINEAR_EFFECT),
         "--n_sim", "1",
         "--exp", str(EXP_NUM),
     ]
@@ -78,7 +74,14 @@ def load_reactome_once():
         )
     )
 
-def train_dataset(data_dir: Path, results_dir: Path, reactome):
+def train_dataset(
+    data_dir: Path,
+    results_dir: Path,
+    reactome,
+    lr: float,
+    batch_size: int,
+    args,
+):
     ds = PnetSimDataSet(root=str(data_dir), num_features=3)
     ds.split_index_by_file(
         train_fp=data_dir / "splits" / "training_set_0.csv",
@@ -92,119 +95,136 @@ def train_dataset(data_dir: Path, results_dir: Path, reactome):
         direction="root_to_leaf",
         add_unk_genes=False,
     )
-    ds.node_index = [g for g in ds.node_index if g in maps[0].index]
+    ds.align_with_map(maps[0].index)
 
     class PerfCallback(MetricsRecorder):
         def __init__(self, out_dir: Path, tr_loader, va_loader, te_loader, period: int = 10):
             super().__init__(out_dir, tr_loader, va_loader, te_loader, period)
 
-    best_score = float("inf")
-    best_state = None
-    best_params = None
-    best_tmp_dir = None
+    run_dir = results_dir
+    tr_loader = GeoLoader(
+        ds,
+        batch_size,
+        sampler=SubsetRandomSampler(ds.train_idx),
+        num_workers=0,
+    )
+    va_loader = GeoLoader(
+        ds,
+        batch_size,
+        sampler=SubsetRandomSampler(ds.valid_idx),
+        num_workers=0,
+    )
+    te_loader = GeoLoader(
+        ds,
+        batch_size,
+        sampler=SubsetRandomSampler(ds.test_idx),
+        num_workers=0,
+    )
 
-    for lr in LR_LIST:
-        for bs in BATCH_LIST:
-            run_dir = results_dir / f"lr{lr}_bs{bs}"
-            tr_loader = GeoLoader(
-                ds,
-                bs,
-                sampler=SubsetRandomSampler(ds.train_idx),
-                num_workers=0,
-            )
-            va_loader = GeoLoader(
-                ds,
-                bs,
-                sampler=SubsetRandomSampler(ds.valid_idx),
-                num_workers=0,
-            )
-            te_loader = GeoLoader(
-                ds,
-                bs,
-                sampler=SubsetRandomSampler(ds.test_idx),
-                num_workers=0,
-            )
+    callback = PerfCallback(run_dir, tr_loader, va_loader, te_loader, period=10)
+    mc = ModelCheckpoint(
+        dirpath=run_dir / "checkpoints",
+        monitor=args.monitor_metric,
+        mode="max" if args.monitor_metric == "val_auc" else "min",
+        save_top_k=1,
+        every_n_epochs=10,
+        save_last=True,
+    )
 
-            callback = PerfCallback(run_dir, tr_loader, va_loader, te_loader, period=10)
-            mc = ModelCheckpoint(
-                dirpath=run_dir / "checkpoints",
-                monitor="val_loss",
-                mode="min",
-                save_top_k=1,
-                every_n_epochs=10,
-                save_last=True,
-            )
-            model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=lr)
-            init_loss, init_acc, init_auc = eval_metrics(model, va_loader)
-            print(
-                f"      Start: loss={init_loss:.4f} acc={init_acc:.4f} auc={init_auc:.4f}"
-            )
-            trainer = pl.Trainer(
-                accelerator="auto",
-                deterministic=True,
-                max_epochs=200,
-                callbacks=[
-                    pl.callbacks.EarlyStopping(
-                        "val_loss",
-                        patience=30,
-                        mode="min",
-                        verbose=False,
-                        min_delta=0.01,
-                    ),
-                    callback,
-                    GradNormPrinter(),
-                    mc,
-                ],
-                logger=InMemoryLogger(),
-                enable_progress_bar=False,
-            )
+    optim_cfg = {
+        "opt": args.optimizer,
+        "lr": lr,
+        "wd": args.weight_decay,
+        "scheduler": args.scheduler,
+        "monitor": args.monitor_metric,
+    }
 
-            trainer.fit(model, tr_loader, va_loader)
-            fin_loss, fin_acc, fin_auc = eval_metrics(model, va_loader)
-            print(
-                f"      End  : loss={fin_loss:.4f} acc={fin_acc:.4f} auc={fin_auc:.4f}"
-            )
+    loss_cfg = {
+        "main": args.main_loss_weight,
+        "aux": args.aux_loss_weight,
+    }
+    if args.per_layer_weights:
+        loss_cfg["per_layer"] = [float(x) for x in args.per_layer_weights.split(",")]
 
-            if mc.best_model_score is not None:
-                score = mc.best_model_score.item()
-                if score < best_score:
-                    best_score = score
-                    best_state = torch.load(mc.best_model_path, map_location="cpu")
-                    if isinstance(best_state, dict) and "state_dict" in best_state:
-                        best_state = best_state["state_dict"]
-                    best_params = {"learning_rate": lr, "batch_size": bs}
-                    best_tmp_dir = run_dir
+    model = PNet(
+        layers=maps,
+        num_genes=maps[0].shape[0],
+        lr=lr,
+        norm_type=args.norm_type,
+        dropout_rate=args.dropout_rate,
+        input_dropout=args.input_dropout,
+        loss_cfg=loss_cfg,
+        optim_cfg=optim_cfg,
+    )
 
-    if best_state is None:
-        raise RuntimeError("Hyperparameter search failed to produce a model")
+    init_loss, init_acc, init_auc = eval_metrics(model, va_loader)
+    print(
+        f"      Start: loss={init_loss:.4f} acc={init_acc:.4f} auc={init_auc:.4f}"
+    )
+
+    trainer = pl.Trainer(
+        accelerator="auto",
+        deterministic=True,
+        max_epochs=200,
+        callbacks=[
+            pl.callbacks.EarlyStopping(
+                args.monitor_metric,
+                patience=30,
+                mode="max" if args.monitor_metric == "val_auc" else "min",
+                verbose=False,
+                min_delta=0.01,
+            ),
+            callback,
+            GradNormPrinter(),
+            mc,
+        ],
+        logger=InMemoryLogger(),
+        enable_progress_bar=False,
+        gradient_clip_val=args.grad_clip_val,
+    )
+
+    if args.auto_lr_find or args.auto_scale_bs:
+        tuner = pl.tuner.Tuner(trainer)
+        if args.auto_lr_find:
+            lr_finder = tuner.lr_find(model, train_dataloaders=tr_loader, val_dataloaders=va_loader)
+            lr = lr_finder.suggestion()
+            model.lr = lr
+        if args.auto_scale_bs:
+            new_bs = tuner.scale_batch_size(model, train_dataloaders=tr_loader, val_dataloaders=va_loader, init_val=batch_size)
+            batch_size = new_bs
+            tr_loader = GeoLoader(ds, batch_size, sampler=SubsetRandomSampler(ds.train_idx), num_workers=0)
+            va_loader = GeoLoader(ds, batch_size, sampler=SubsetRandomSampler(ds.valid_idx), num_workers=0)
+            te_loader = GeoLoader(ds, batch_size, sampler=SubsetRandomSampler(ds.test_idx), num_workers=0)
+
+    trainer.fit(model, tr_loader, va_loader)
+    fin_loss, fin_acc, fin_auc = eval_metrics(model, va_loader)
+    print(
+        f"      End  : loss={fin_loss:.4f} acc={fin_acc:.4f} auc={fin_auc:.4f}"
+    )
+
+    state = torch.load(mc.best_model_path, map_location="cpu") if mc.best_model_path else model.state_dict()
+    if isinstance(state, dict) and "state_dict" in state:
+        state = state["state_dict"]
 
     (results_dir / "optimal").mkdir(parents=True, exist_ok=True)
-    torch.save(best_state, results_dir / "optimal" / "trained_model.pth")
-    with open(results_dir / "optimal" / "best_params.json", "w") as f:
-        json.dump(best_params, f)
+    torch.save(state, results_dir / "optimal" / "trained_model.pth")
 
-    if best_tmp_dir and best_tmp_dir != results_dir:
-        src_perf = best_tmp_dir / "performance"
-        src_vis = best_tmp_dir / "visualize"
-        if src_perf.exists():
-            dst_perf = results_dir / "performance"
-            if dst_perf.exists():
-                shutil.rmtree(dst_perf)
-            shutil.copytree(src_perf, dst_perf)
-        if src_vis.exists():
-            dst_vis = results_dir / "visualize"
-            if dst_vis.exists():
-                shutil.rmtree(dst_vis)
-            shutil.copytree(src_vis, dst_vis)
+    return maps, fin_loss, fin_auc, {
+        "learning_rate": lr,
+        "batch_size": batch_size,
+        "optimizer": args.optimizer,
+        "scheduler": args.scheduler,
+        "norm_type": args.norm_type,
+        "dropout_rate": args.dropout_rate,
+        "loss_cfg": loss_cfg,
+    }, state
 
-    return maps
-
-def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: str):
+def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: str, args=None):
     ds = PnetSimExpDataSet(root=str(data_dir), num_features=1)
     ds.split_index_by_file(
         train_fp=data_dir / 'splits' / 'training_set_0.csv',
         valid_fp=data_dir / 'splits' / 'validation_set.csv',
-        test_fp = data_dir / 'splits' / 'test_set.csv',
+        test_fp=data_dir / 'splits' / 'test_set.csv',
     )
     maps = get_layer_maps(
         genes=list(ds.node_index),
@@ -213,8 +233,15 @@ def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: s
         direction='root_to_leaf',
         add_unk_genes=False
     )
-    ds.node_index = [g for g in ds.node_index if g in maps[0].index]
-    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=0.001)
+    ds.align_with_map(maps[0].index)
+    model = PNet(
+        layers=maps,
+        num_genes=maps[0].shape[0],
+        lr=0.001,
+        norm_type=args.norm_type if args else "batchnorm",
+        dropout_rate=args.dropout_rate if args else 0.1,
+        input_dropout=args.input_dropout if args else 0.5,
+    )
     state = torch.load(results_dir / 'optimal' / 'trained_model.pth', map_location='cpu')
     if isinstance(state, dict) and 'state_dict' in state:
         state = state['state_dict']
@@ -245,14 +272,22 @@ def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: s
         print(len(expl_acc), "explanations found for", method)
         for idx, (lname, arrs) in enumerate(expl_acc.items()):
             print(f"Saving {method} layer {tgt} explanation for {lname} ...")
-            if idx >= len(maps):
-                break
             arr = np.concatenate(arrs, axis=0)
             labels = np.concatenate(lab_acc, axis=0)
-            preds  = np.concatenate(pred_acc, axis=0)
-            all_ids= [sid for batch in id_acc for sid in batch]
-            cur_map = maps[idx]
-            cols = list(cur_map.index) if cur_map.shape[0]==arr.shape[1] else list(cur_map.columns)
+            preds = np.concatenate(pred_acc, axis=0)
+            all_ids = [sid for batch in id_acc for sid in batch]
+
+            cols = None
+            for m in maps:
+                if arr.shape[1] == m.shape[0]:
+                    cols = list(m.index)
+                    break
+                if arr.shape[1] == m.shape[1]:
+                    cols = list(m.columns)
+                    break
+            if cols is None:
+                cols = [f"f{i}" for i in range(arr.shape[1])]
+
             df = pd.DataFrame(arr, columns=cols)
             df['label'] = labels
             df['prediction'] = preds
@@ -264,16 +299,65 @@ def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: s
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Run experiment 1")
     ap.add_argument("--exp", type=int, default=1, help="Experiment number")
+    ap.add_argument("--learning_rate", type=float, default=1e-3)
+    ap.add_argument("--batch_size", type=int, default=32)
+    ap.add_argument("--optimizer", choices=["adam", "adamw"], default="adam")
+    ap.add_argument(
+        "--scheduler", choices=["none", "cosine", "plateau", "onecycle"], default="none"
+    )
+    ap.add_argument("--weight_decay", type=float, default=0.0)
+    ap.add_argument("--monitor_metric", choices=["val_loss", "val_auc"], default="val_loss")
+    ap.add_argument("--norm_type", choices=["batchnorm", "layernorm", "none"], default="batchnorm")
+    ap.add_argument("--dropout_rate", type=float, default=0.1)
+    ap.add_argument("--input_dropout", type=float, default=0.5)
+    ap.add_argument("--main_loss_weight", type=float, default=1.0)
+    ap.add_argument("--aux_loss_weight", type=float, default=0.0)
+    ap.add_argument("--per_layer_weights", type=str, default=None)
+    ap.add_argument("--auto_lr_find", action="store_true")
+    ap.add_argument("--auto_scale_bs", action="store_true")
+    ap.add_argument("--lr_list", type=float, nargs="*")
+    ap.add_argument("--bs_list", type=int, nargs="*")
+    ap.add_argument("--grad_clip_val", type=float, default=0.0)
     args = ap.parse_args()
     EXP_NUM = args.exp
 
     reactome = load_reactome_once()
-    for beta in BETA_LIST:
-        for gamma in GAMMA_LIST:
-            generate(beta, gamma, nonlinear=True)
-            scenario_id = Path(f"b{beta}_g{gamma}") / "1"
-            data_dir = Path("data") / f"experiment{EXP_NUM}" / scenario_id
-            results_dir = Path("results") / f"experiment{EXP_NUM}" / scenario_id
-            maps = train_dataset(data_dir, results_dir, reactome)
-            for method in METHODS:
-                explain_dataset(data_dir, results_dir, reactome, maps, method)
+    generate(nonlinear=True)
+    scenario_id = Path(f"b{PATHWAY_LINEAR_EFFECT}_g{PATHWAY_NONLINEAR_EFFECT}") / "1"
+    data_dir = Path("data") / f"experiment{EXP_NUM}" / scenario_id
+    results_dir = Path("results") / f"experiment{EXP_NUM}" / scenario_id
+    if args.lr_list or args.bs_list:
+        lrs = args.lr_list or [args.learning_rate]
+        bss = args.bs_list or [args.batch_size]
+        summary = []
+        best = None
+        best_maps = None
+        best_cfg = None
+        best_state = None
+        for lr in lrs:
+            for bs in bss:
+                maps, vloss, vauc, cfg, state = train_dataset(data_dir, results_dir, reactome, lr, bs, args)
+                summary.append({"lr": lr, "batch_size": bs, "val_loss": vloss, "val_auc": vauc})
+                score = vauc if args.monitor_metric == "val_auc" else vloss
+                better = (best is None) or (
+                    score > best if args.monitor_metric == "val_auc" else score < best
+                )
+                if better:
+                    best = score
+                    best_maps = maps
+                    best_cfg = cfg
+                    best_state = state
+        pd.DataFrame(summary).to_csv(results_dir / "summary.csv", index=False)
+        maps = best_maps
+        (results_dir / "optimal").mkdir(parents=True, exist_ok=True)
+        torch.save(best_state, results_dir / "optimal" / "trained_model.pth")
+        with open(results_dir / "optimal" / "best_params.json", "w") as f:
+            json.dump(best_cfg, f)
+    else:
+        maps, _, _, cfg, state = train_dataset(
+            data_dir, results_dir, reactome, args.learning_rate, args.batch_size, args
+        )
+        with open(results_dir / "optimal" / "best_params.json", "w") as f:
+            json.dump(cfg, f)
+
+    explain_dataset(data_dir, results_dir, reactome, maps, METHOD, args)

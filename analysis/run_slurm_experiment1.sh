@@ -18,3 +18,5 @@ which python              # 경로 확인(디버그용)
 
 # 4) 실행
 python experiment1.py
+python model_comparison.py --data-dir ../data/experiment1/b2.0_g2.0/1 --output-dir ../experiment/comparison
+
