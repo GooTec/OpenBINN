@@ -32,6 +32,8 @@ import openbinn.experiment_utils as utils
 # ──────────────────────────────────────────
 # 계산할 설명 기법 목록. shap은 DeepLiftShap, gradshap은 GradientShap을 의미한다.
 METHODS       = ["itg", "ig", "gradshap", "deeplift", "shap"]
+# gradient-based methods listed here do not require a baseline tensor
+NO_BASELINE_METHODS = {"itg", "sg", "grad", "lrp", "lime", "control", "feature_ablation"}
 N_SIM         = 100
 N_VARIANTS    = 100
 DEFAULT_BETA  = 2
@@ -134,8 +136,8 @@ def explain_dataset(scen_dir: Path, reactome):
                 p_conf = utils.fill_param_dict(METHOD, config['explainers'][METHOD], X)
                 p_conf['classification_type'] = 'binary'
 
-                # gradient-based methods do not require a baseline tensor
-                if METHOD not in {'itg', 'sg', 'grad', 'lrp', 'lime', 'control', 'feature_ablation'}:
+                # only add baseline when required by the explanation method
+                if METHOD not in NO_BASELINE_METHODS:
                     p_conf['baseline'] = torch.zeros_like(X)
 
                 explainer = Explainer(METHOD, wrap, p_conf)

@@ -25,6 +25,10 @@ import openbinn.experiment_utils as utils
 from openbinn.binn.data import PnetSimDataSet, ReactomeNetwork, get_layer_maps
 
 METHODS = ["itg", "ig", "gradshap", "deeplift", "shap"]
+NO_BASELINE_METHODS = {"itg", "sg", "grad", "lrp", "lime", "control", "feature_ablation"}
+SEED = 42
+np.random.seed(SEED)
+torch.manual_seed(SEED)
 
 
 def load_dataset(data_dir: Path):
@@ -56,12 +60,19 @@ def load_dataset(data_dir: Path):
 
 
 def train_logistic(x_train, y_train):
-    model = LogisticRegression(penalty="l1", solver="liblinear", max_iter=1000)
+    """Train an L1-regularized logistic regression model."""
+    model = LogisticRegression(
+        penalty="l1", solver="liblinear", max_iter=1000, random_state=SEED
+    )
     model.fit(x_train, y_train)
     return model
 
 
-def train_fnn(x_train, y_train, hidden_dim=128, epochs=50, batch_size=32, lr=1e-3):
+def train_fnn(
+    x_train, y_train, hidden_dim=128, epochs=50, batch_size=32, lr=1e-3
+):
+    """Train a simple fully connected neural network."""
+    torch.manual_seed(SEED)
     input_dim = x_train.shape[1]
     model = nn.Sequential(
         nn.Linear(input_dim, hidden_dim),
@@ -70,7 +81,9 @@ def train_fnn(x_train, y_train, hidden_dim=128, epochs=50, batch_size=32, lr=1e-
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.BCEWithLogitsLoss()
-    dataset = TensorDataset(torch.from_numpy(x_train).float(), torch.from_numpy(y_train).float())
+    dataset = TensorDataset(
+        torch.from_numpy(x_train).float(), torch.from_numpy(y_train).float()
+    )
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     for _ in range(epochs):
         for xb, yb in loader:
@@ -83,6 +96,7 @@ def train_fnn(x_train, y_train, hidden_dim=128, epochs=50, batch_size=32, lr=1e-
 
 
 def summarize_fcnn(model, x, y, config):
+    """Return aggregated gene importances for the FCNN model."""
     model.eval()
     x_tensor = torch.from_numpy(x).float()
     y_tensor = torch.from_numpy(y).long()
@@ -90,7 +104,7 @@ def summarize_fcnn(model, x, y, config):
     for method in METHODS:
         p_conf = utils.fill_param_dict(method, config['explainers'][method], x_tensor)
         p_conf['classification_type'] = 'binary'
-        if method not in {'itg', 'sg', 'grad', 'lrp', 'lime', 'control', 'feature_ablation'}:
+        if method not in NO_BASELINE_METHODS:
             p_conf['baseline'] = torch.zeros_like(x_tensor)
         explainer = Explainer(method, model, p_conf)
         imp = explainer.get_explanations(x_tensor, y_tensor)
@@ -99,6 +113,7 @@ def summarize_fcnn(model, x, y, config):
 
 
 def summarize_binn(exp_dir: Path):
+    """Aggregate BINN explanations averaged across layers."""
     summary = {}
     exp_root = exp_dir / "explanations"
     for method in METHODS:
