@@ -40,7 +40,7 @@ def main() -> None:
                     help="Experiment number to store data under")
     ap.add_argument("--pathway_nonlinear", action="store_true",
                     help="Use pathway-based nonlinear outcome generation")
-    ap.add_argument("--gene_effect_sigma", type=float, default=20.0,
+    ap.add_argument("--gene_effect_sigma", type=float, default=0.0,
                     help="Stddev of gene coefficients when nonlinear")
     ap.add_argument("--prev", type=float, default=0.5,
                     help="Target prevalence for intercept calibration")
