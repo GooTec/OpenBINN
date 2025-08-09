@@ -46,7 +46,7 @@ def load_dataset(data_dir: Path):
     )
     ds.align_with_map(maps[0].index)
     x = ds.x.view(len(ds.y), -1).numpy()
-    y = ds.y.numpy()
+    y = ds.y.numpy().ravel()
     return ds, x, y
 
 
@@ -71,7 +71,7 @@ def train_fnn(x_train, y_train, hidden_dim=128, epochs=50, batch_size=32, lr=1e-
         for xb, yb in loader:
             optimizer.zero_grad()
             logits = model(xb).squeeze(-1)
-            loss = criterion(logits, yb)
+            loss = criterion(logits, yb.view_as(logits))
             loss.backward()
             optimizer.step()
     return model

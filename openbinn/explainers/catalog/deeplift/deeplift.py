@@ -70,57 +70,50 @@ class DeepLift(BaseExplainer):
             explanations (dict): Dictionary containing explanations for each layer
         """
         target_layer = getattr(self.model, "print_layer", 0)
-        # print(target_layer)
 
         explanations = {}
         self.model.eval()
         self.model.zero_grad()
 
-        # Define label if not provided
+        # Determine label if not provided
         if label is None:
             if self.classification_type == "binary":
                 label = (self.model(inputs.float()) > 0.5).long().view(-1)
             else:
                 label = self.model(inputs.float()).argmax(dim=-1)
 
-        # Iterate through the model layers
-        for name, layer in self.model.named_modules():
-            # Skip non-learnable layers (like nn.ReLU, nn.Dropout, etc.)
-            if not hasattr(layer, 'weight') and not hasattr(layer, 'bias'):
-                continue
-            elif 'intermediate' in name:
-                continue
-            elif target_layer < 7 and 'network' in name:
-                # Some module names include the string "network" but lack an
-                # adjacent numeric index (e.g., "network.network").  Previous
-                # logic attempted to access the presumed index directly and
-                # crashed when the segment was non-numeric.  Here we scan the
-                # full name for any numeric components and use the largest one
-                # to decide whether to skip the layer.
-                digits = [int(p) for p in name.split('.') if p.isdigit()]
-                if digits and max(digits) >= target_layer:
-                    continue
+        # Ensure a baseline tensor exists and matches the input shape
+        if self.baseline is None:
+            self.baseline = torch.zeros_like(inputs, device=inputs.device)
+        elif self.baseline.shape != inputs.shape:
+            raise ValueError(
+                f"Baseline shape {self.baseline.shape} does not match input shape {inputs.shape}."
+            )
 
-            # Initialize LayerDeepLift for the current layer
+        # Only attribute up to the requested target layer.  Access the underlying
+        # model if a wrapper is used and iterate over its top-level network
+        # modules to avoid capturing auxiliary submodules that inflated the layer
+        # count previously.
+        core_model = getattr(self.model, "model", self.model)
+        network = getattr(core_model, "network", None)
+        layers = list(network[:target_layer]) if network is not None else []
+
+        for idx, layer in enumerate(layers):
             layer_dl = LayerDeepLift(self.model, layer)
-
-            # Compute attributions for the current layer
             if self.classification_type == "binary":
                 attribution = layer_dl.attribute(
                     inputs.float(),
                     target=0,
                     baselines=self.baseline,
-                    attribute_to_layer_input=False  # Set to True if needed
+                    attribute_to_layer_input=False,
                 )
             else:
                 attribution = layer_dl.attribute(
                     inputs.float(),
                     target=label,
                     baselines=self.baseline,
-                    attribute_to_layer_input=False  # Set to True if needed
+                    attribute_to_layer_input=False,
                 )
-
-            # Store the explanation for the current layer
-            explanations[name] = attribution
+            explanations[f"layer_{idx}"] = attribution
 
         return explanations

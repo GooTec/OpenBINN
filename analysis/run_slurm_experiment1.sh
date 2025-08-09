@@ -17,6 +17,13 @@ conda activate openBINN
 which python              # 경로 확인(디버그용)
 
 # 4) 실행
+beta=2.0
+gamma=2.0
+rep=1
+
+data_dir=./data/experiment1/b${beta}_g${gamma}/${rep}
+results_dir=./results/experiment1/b${beta}_g${gamma}/${rep}
+
 python experiment1.py
-python model_comparison.py --data-dir ../data/experiment1/b2.0_g2.0/1 --output-dir ../experiment/comparison
+python model_comparison.py --data-dir "$data_dir" --output-dir "$results_dir/comparison"
 
