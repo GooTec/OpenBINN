@@ -61,7 +61,10 @@ def load_dataset(data_dir: Path):
         add_unk_genes=False,
     )
     ds.align_with_map(maps[0].index)
-    x = ds.x.view(len(ds.y), -1).numpy()
+    # ``ds.x`` may not be stored contiguously; ``reshape`` handles such tensors
+    # whereas ``view`` would raise runtime errors. Use reshape to obtain a
+    # flattened feature matrix without enforcing contiguity.
+    x = ds.x.reshape(len(ds.y), -1).numpy()
     y = ds.y.numpy().ravel()
     return ds, x, y
 
