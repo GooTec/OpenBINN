@@ -61,11 +61,11 @@ def load_dataset(data_dir: Path):
         add_unk_genes=False,
     )
     ds.align_with_map(maps[0].index)
-    # ``ds.x`` may not be stored contiguously; ``reshape`` handles such tensors
-    # whereas ``view`` would raise runtime errors. Use reshape to obtain a
-    # flattened feature matrix without enforcing contiguity.
-    x = ds.x.reshape(len(ds.y), -1).numpy()
-    y = ds.y.numpy().ravel()
+    # ``ds.x`` may not be stored contiguously and its leading dimension may not
+    # exactly match ``len(ds.y)``. Use ``reshape`` with the tensor's own size to
+    # avoid view-related errors and ensure a proper copy when needed.
+    x = ds.x.reshape(ds.x.shape[0], -1).detach().cpu().numpy()
+    y = ds.y.reshape(-1).numpy()
     return ds, x, y
 
 
@@ -99,7 +99,8 @@ def train_fnn(
         for xb, yb in loader:
             optimizer.zero_grad()
             logits = model(xb).squeeze(-1)
-            loss = criterion(logits, yb.view_as(logits))
+            # ``reshape_as`` avoids assuming ``yb`` is stored contiguously
+            loss = criterion(logits, yb.reshape_as(logits))
             loss.backward()
             optimizer.step()
     return model
