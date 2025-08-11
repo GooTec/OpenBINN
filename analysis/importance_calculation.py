@@ -125,9 +125,12 @@ def explain_dataset(scen_dir: Path, reactome):
     data_label   = scen_dir.name        # ex) 1, 37, 5 …
     split_name   = "test"
 
-    for METHOD in METHODS:
+    methods = [m for m in METHODS if m in config['explainers']]
+    print(f"Methods to compute: {', '.join(methods)}")
+    for METHOD in methods:
         # ───────────────── layer loop ──────────────────
         for tgt in range(1, len(maps)+1):
+            print(f"Explaining {METHOD} for target layer {tgt} ...")
             wrap = ModelWrapper(model, tgt)
 
             expl_acc, lab_acc, pred_acc, id_acc = {}, [], [], []
@@ -168,6 +171,7 @@ def explain_dataset(scen_dir: Path, reactome):
 
                 csv_fp = explain_root / f"{model_name}_{data_label}_{METHOD}_L{tgt}_layer{idx}_{split_name}.csv"
                 df.to_csv(csv_fp, index=False)
+        print(f"Saved raw importances for {METHOD}")
 
     print("    ✓ raw per-sample importance saved")
 
