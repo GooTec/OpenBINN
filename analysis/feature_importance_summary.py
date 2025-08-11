@@ -106,7 +106,7 @@ def train_fnn(
     return model
 
 
-def summarize_fcnn(model, x, y, config):
+def summarize_fcnn(model, x, y, config, n_genes: int, n_feat: int):
     """Return aggregated gene importances for the FCNN model."""
     model.eval()
     x_tensor = torch.from_numpy(x).float()
@@ -119,7 +119,8 @@ def summarize_fcnn(model, x, y, config):
             p_conf['baseline'] = torch.zeros_like(x_tensor)
         explainer = Explainer(method, model, p_conf)
         imp = explainer.get_explanations(x_tensor, y_tensor)
-        summary[method] = imp.abs().sum(0).detach().cpu().numpy()
+        imp = imp.abs().sum(0).detach().cpu().numpy()
+        summary[method] = imp.reshape(n_genes, n_feat).sum(axis=1)
     return summary
 
 
@@ -152,12 +153,14 @@ def main():
     tr_idx = ds.train_idx
 
     log_model = train_logistic(x[tr_idx], y[tr_idx])
-    beta = np.abs(log_model.coef_[0])
+    n_genes = len(ds.node_index)
+    n_feat = ds.x.shape[2]
+    beta = np.abs(log_model.coef_[0].reshape(n_genes, n_feat)).sum(axis=1)
 
     fcnn = train_fnn(x[tr_idx], y[tr_idx])
     root = Path(__file__).resolve().parents[1]
     config = utils.load_config(str(root / "configs/experiment_config.json"))
-    fcnn_imp = summarize_fcnn(fcnn, x, y, config)
+    fcnn_imp = summarize_fcnn(fcnn, x, y, config, n_genes, n_feat)
 
     binn_imp = summarize_binn(Path(args.binn_dir))
 
