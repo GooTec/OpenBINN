@@ -31,7 +31,7 @@ from openbinn.explainer import Explainer
 import openbinn.experiment_utils as utils
 from openbinn.binn.data import PnetSimDataSet, ReactomeNetwork, get_layer_maps
 
-METHODS = ["itg", "ig", "gradshap", "deeplift", "shap"]
+METHODS = ["itg", "ig", "deeplift", "shap"]
 NO_BASELINE_METHODS = {"itg", "sg", "grad", "lrp", "lime", "control", "feature_ablation"}
 SEED = 42
 np.random.seed(SEED)

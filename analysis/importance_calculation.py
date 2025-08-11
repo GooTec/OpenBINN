@@ -30,8 +30,8 @@ from openbinn.explainer import Explainer
 import openbinn.experiment_utils as utils
 
 # ──────────────────────────────────────────
-# 계산할 설명 기법 목록. shap은 DeepLiftShap, gradshap은 GradientShap을 의미한다.
-METHODS       = ["itg", "ig", "gradshap", "deeplift", "shap"]
+# 계산할 설명 기법 목록. shap은 DeepLiftShap을 의미한다.
+METHODS       = ["itg", "ig", "deeplift", "shap"]
 # gradient-based methods listed here do not require a baseline tensor
 NO_BASELINE_METHODS = {"itg", "sg", "grad", "lrp", "lime", "control", "feature_ablation"}
 N_SIM         = 100
