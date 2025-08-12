@@ -25,8 +25,8 @@ from openbinn.explainer import Explainer
 import openbinn.experiment_utils as utils
 from openbinn.binn.data import PnetSimDataSet, ReactomeNetwork, get_layer_maps
 
-METHODS = ["itg", "ig", "shap", "deeplift", "deepliftshap"]
-NO_BASELINE_METHODS = {"itg", "sg", "grad", "gradshap", "lrp", "lime", "control", "feature_ablation"}
+METHODS = ["ig", "shap", "deeplift", "deepliftshap"]
+NO_BASELINE_METHODS = {"sg", "grad", "gradshap", "lrp", "lime", "control", "feature_ablation"}
 SEED = 42
 
 

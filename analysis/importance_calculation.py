@@ -32,9 +32,9 @@ import openbinn.experiment_utils as utils
 # ──────────────────────────────────────────
 # 계산할 설명 기법 목록. ``shap`` 은 DeepLiftShap,
 # ``deepliftshap`` 은 동일한 기법을 다른 이름으로 저장한다.
-METHODS       = ["itg", "ig", "shap", "deeplift", "deepliftshap"]
+METHODS       = ["ig", "shap", "deeplift", "deepliftshap"]
 # gradient-based methods listed here do not require a baseline tensor
-NO_BASELINE_METHODS = {"itg", "sg", "grad", "gradshap", "lrp", "lime", "control", "feature_ablation"}
+NO_BASELINE_METHODS = {"sg", "grad", "gradshap", "lrp", "lime", "control", "feature_ablation"}
 N_SIM         = 100
 N_VARIANTS    = 100
 DEFAULT_BETA  = 2

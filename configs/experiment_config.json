@@ -6,7 +6,7 @@
         "prostate"
     ],
     "methods": [
-        "lrp", "control", "grad", "ig", "itg", "sg", "gradshap", "shap", "lime", "deeplift", "feature_ablation"
+        "lrp", "control", "grad", "ig", "sg", "shap", "lime", "deeplift", "feature_ablation"
     ],
     "metrics": [
         "PRA", "RC",
@@ -23,18 +23,13 @@
             "absolute_value": false
         },
         "ig": {
-            "method": "gausslegendre", 
+            "method": "gausslegendre",
             "multiply_by_inputs": false
         },
-        "itg": {},
         "sg": {
             "n_samples": 100,
             "standard_deviation": 0.1,
             "seed": 0
-        },
-        "gradshap": {
-            "n_samples": 50,
-            "stdevs": 0.0
         },
         "shap": {
         },

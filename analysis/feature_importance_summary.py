@@ -19,7 +19,7 @@ import json
 import numpy as np
 import pandas as pd
 
-METHODS = ["itg", "ig", "shap", "deeplift", "deepliftshap"]
+METHODS = ["ig", "shap", "deeplift", "deepliftshap"]
 
 
 def summarize_logistic(exp_dir: Path) -> pd.Series:

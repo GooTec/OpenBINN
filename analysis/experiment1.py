@@ -39,8 +39,8 @@ import json
 
 PATHWAY_LINEAR_EFFECT = 2.0
 PATHWAY_NONLINEAR_EFFECT = 2.0
-METHODS = ["itg", "ig", "shap", "deeplift", "deepliftshap"]
-NO_BASELINE_METHODS = {"itg", "sg", "grad", "gradshap", "lrp", "lime", "control", "feature_ablation"}
+METHODS = ["ig", "shap", "deeplift", "deepliftshap"]
+NO_BASELINE_METHODS = {"sg", "grad", "gradshap", "lrp", "lime", "control", "feature_ablation"}
 
 class ModelWrapper(torch.nn.Module):
     def __init__(self, model: PNet, target_layer: int):
