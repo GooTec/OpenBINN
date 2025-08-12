@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import json
 import numpy as np
 import pandas as pd
 
@@ -67,13 +68,24 @@ def main() -> None:
     data_dir = Path(args.data_dir)
     out_dir = Path(args.out_dir); out_dir.mkdir(parents=True, exist_ok=True)
 
-    truth_fp = data_dir / "true_genes.csv"
-    if not truth_fp.exists():
-        raise FileNotFoundError("true_genes.csv not found in data directory")
-    truth = pd.read_csv(truth_fp).set_index("gene")["important"]
-    genes = truth.index
+    log_imp = summarize_logistic(data_dir)
 
-    log_imp = summarize_logistic(data_dir).reindex(genes).fillna(0)
+    gt_fp = data_dir / "ground_truth.json"
+    true_genes: set[str]
+    if gt_fp.exists():
+        with gt_fp.open() as f:
+            gt = json.load(f)
+        true_genes = set(gt.get("true_genes", []))
+    else:
+        csv_fp = data_dir / "true_genes.csv"
+        if not csv_fp.exists():
+            raise FileNotFoundError("ground_truth.json or true_genes.csv not found in data directory")
+        true_genes = set(pd.read_csv(csv_fp)["gene"])
+
+    genes = log_imp.index
+    truth = pd.Series([1 if g in true_genes else 0 for g in genes], index=genes)
+
+    log_imp = log_imp.reindex(genes).fillna(0)
     fcnn_imp = summarize_fcnn(data_dir)
     binn_imp = summarize_binn(data_dir)
 
