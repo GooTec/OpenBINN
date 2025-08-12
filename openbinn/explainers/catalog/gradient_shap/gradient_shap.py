@@ -75,8 +75,14 @@ class GradientShap(BaseExplainer):
                 continue
             if "intermediate" in name:
                 continue
-            if target_layer < 7 and "network" in name and int(name.split(".")[-2]) >= target_layer:
-                continue
+            if target_layer < 7 and "network" in name:
+                parts = name.split(".")
+                if len(parts) > 1:
+                    try:
+                        if int(parts[-2]) >= target_layer:
+                            continue
+                    except ValueError:
+                        pass
 
             lgs = LayerGradientShap(self.model, layer)
             if self.classification_type == "binary":
