@@ -16,9 +16,13 @@ set -euxo pipefail        # 이제부터 unbound 변수 검사
 conda activate openBINN
 which python              # 경로 확인(디버그용)
 
-# 4) 경로 설정
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+# 4) 경로 설정: sbatch 제출 디렉토리를 기준으로 작업 경로 지정
+WORKDIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
+cd "$WORKDIR"
+# 스크립트를 루트에서 제출한 경우 analysis 하위로 이동
+if [[ ! -f run_slurm_experiment1.sh && -d analysis ]]; then
+    cd analysis
+fi
 
 # 5) 실행
 beta=2.0
