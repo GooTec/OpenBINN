@@ -55,9 +55,9 @@ class InputTimesGradient(BaseExplainer):
 
             lig = LayerGradientXActivation(self.model, layer)
             if self.classification_type == "binary":
-                attr = lig.attribute(inputs.float(), target=0)
+                attr = lig.attribute(inputs.float(), target=0, allow_unused=True)
             else:
-                attr = lig.attribute(inputs.float(), target=label)
+                attr = lig.attribute(inputs.float(), target=label, allow_unused=True)
             explanations[name] = attr
 
         return explanations
