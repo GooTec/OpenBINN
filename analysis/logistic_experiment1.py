@@ -74,7 +74,7 @@ def main():
     model = train_logistic(x_tr, y_tr)
     n_genes = len(ds.node_index)
     n_feat = ds.x.shape[2]
-    beta = np.abs(model.coef_[0]).reshape(n_genes, n_feat).sum(axis=1)
+    beta = model.coef_[0].reshape(n_genes, n_feat).sum(axis=1)
 
     exp_dir = data_dir / "results" / "explanations" / "Logistic"
     exp_dir.mkdir(parents=True, exist_ok=True)

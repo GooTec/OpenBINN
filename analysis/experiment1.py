@@ -31,6 +31,7 @@ from openbinn.binn.data import (
     get_layer_maps,
 )
 from openbinn.explainer import Explainer
+import openbinn.experiment_utils as utils
 import numpy as np
 import pandas as pd
 import json
@@ -38,7 +39,8 @@ import json
 
 PATHWAY_LINEAR_EFFECT = 2.0
 PATHWAY_NONLINEAR_EFFECT = 2.0
-METHOD = "deeplift"
+METHODS = ["itg", "ig", "shap", "deeplift", "deepliftshap"]
+NO_BASELINE_METHODS = {"itg", "sg", "grad", "gradshap", "lrp", "lime", "control", "feature_ablation"}
 
 class ModelWrapper(torch.nn.Module):
     def __init__(self, model: PNet, target_layer: int):
@@ -219,7 +221,7 @@ def train_dataset(
         "loss_cfg": loss_cfg,
     }, state
 
-def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: str, args=None):
+def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, args=None):
     ds = PnetSimExpDataSet(root=str(data_dir), num_features=1)
     ds.split_index_by_file(
         train_fp=data_dir / 'splits' / 'training_set_0.csv',
@@ -248,53 +250,61 @@ def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, method: s
     model.load_state_dict(state)
     model.eval()
     loader = GeoLoader(ds, batch_size=len(ds.test_idx), sampler=SubsetRandomSampler(ds.test_idx), num_workers=0)
-    explain_root = results_dir / 'explanations'
-    explain_root.mkdir(exist_ok=True)
+    explain_root = results_dir / 'explanations' / 'PNET'
+    explain_root.mkdir(parents=True, exist_ok=True)
+    data_label = data_dir.name
+    config = utils.load_config("../configs/experiment_config.json")
 
     print("#samples in ds         :", len(ds))
     print("#test-indices in ds    :", len(ds.test_idx))
     print("first 10 test-idx      :", ds.test_idx[:10])
 
-    for tgt in range(1, len(maps)+1):
-        print(f"Explaining {method} for target layer {tgt} ...")
-        wrap = ModelWrapper(model, tgt)
-        expl_acc, lab_acc, pred_acc, id_acc = {}, [], [], []
-        for X, y, ids in loader:
-            p_conf = {'baseline': torch.zeros_like(X), 'classification_type': 'binary'}
-            explainer = Explainer(method, wrap, p_conf)
-            exp_dict = explainer.get_layer_explanations(X, y)
-            for lname, ten in exp_dict.items():
-                expl_acc.setdefault(lname, []).append(ten.detach().cpu().numpy())
-            lab_acc.append(y.cpu().numpy())
-            pred_acc.append(wrap(X).detach().cpu().numpy())
-            id_acc.append(ids)
+    methods = [m for m in METHODS if (m == "deepliftshap" and "shap" in config['explainers']) or m in config['explainers']]
+    for method in methods:
+        base_method = "shap" if method == "deepliftshap" else method
+        for tgt in range(1, len(maps)+1):
+            print(f"Explaining {method} for target layer {tgt} ...")
+            wrap = ModelWrapper(model, tgt)
+            expl_acc, lab_acc, pred_acc, id_acc = {}, [], [], []
+            for X, y, ids in loader:
+                p_conf = utils.fill_param_dict(base_method, config['explainers'][base_method], X)
+                p_conf['classification_type'] = 'binary'
+                if base_method not in NO_BASELINE_METHODS:
+                    p_conf['baseline'] = torch.zeros_like(X)
+                explainer = Explainer(base_method, wrap, p_conf)
+                exp_dict = explainer.get_layer_explanations(X, y)
+                for lname, ten in exp_dict.items():
+                    expl_acc.setdefault(lname, []).append(ten.detach().cpu().numpy())
+                lab_acc.append(y.cpu().numpy())
+                pred_acc.append(wrap(X).detach().cpu().numpy())
+                id_acc.append(ids)
 
-        print(len(expl_acc), "explanations found for", method)
-        for idx, (lname, arrs) in enumerate(expl_acc.items()):
-            print(f"Saving {method} layer {tgt} explanation for {lname} ...")
-            arr = np.concatenate(arrs, axis=0)
-            labels = np.concatenate(lab_acc, axis=0)
-            preds = np.concatenate(pred_acc, axis=0)
-            all_ids = [sid for batch in id_acc for sid in batch]
+            print(len(expl_acc), "explanations found for", method)
+            for idx, (lname, arrs) in enumerate(expl_acc.items()):
+                print(f"Saving {method} layer {tgt} explanation for {lname} ...")
+                arr = np.concatenate(arrs, axis=0)
+                labels = np.concatenate(lab_acc, axis=0)
+                preds = np.concatenate(pred_acc, axis=0)
+                all_ids = [sid for batch in id_acc for sid in batch]
 
-            cols = None
-            for m in maps:
-                if arr.shape[1] == m.shape[0]:
-                    cols = list(m.index)
-                    break
-                if arr.shape[1] == m.shape[1]:
-                    cols = list(m.columns)
-                    break
-            if cols is None:
-                cols = [f"f{i}" for i in range(arr.shape[1])]
+                cols = None
+                for m in maps:
+                    if arr.shape[1] == m.shape[0]:
+                        cols = list(m.index)
+                        break
+                    if arr.shape[1] == m.shape[1]:
+                        cols = list(m.columns)
+                        break
+                if cols is None:
+                    cols = [f"f{i}" for i in range(arr.shape[1])]
 
-            df = pd.DataFrame(arr, columns=cols)
-            df['label'] = labels
-            df['prediction'] = preds
-            df['sample_id'] = all_ids
-            out_fp = explain_root / f"PNet_{method}_L{tgt}_layer{idx}_test.csv"
-            df.to_csv(out_fp, index=False)
-    print(f"Saved raw importances for {method}")
+                df = pd.DataFrame(arr, columns=cols)
+                df['label'] = labels
+                df['prediction'] = preds
+                df['sample_id'] = all_ids
+                out_fp = explain_root / f"PNet_{data_label}_{method}_L{tgt}_layer{idx}_test.csv"
+                df.to_csv(out_fp, index=False)
+        print(f"Saved raw importances for {method}")
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Run experiment 1")
@@ -360,4 +370,4 @@ if __name__ == "__main__":
         with open(results_dir / "optimal" / "best_params.json", "w") as f:
             json.dump(cfg, f)
 
-    explain_dataset(data_dir, results_dir, reactome, maps, METHOD, args)
+    explain_dataset(data_dir, results_dir, reactome, maps, args)

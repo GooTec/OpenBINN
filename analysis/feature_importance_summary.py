@@ -27,7 +27,7 @@ def summarize_logistic(exp_dir: Path) -> pd.Series:
     if not fp.exists():
         raise FileNotFoundError(fp)
     df = pd.read_csv(fp)
-    return df.set_index("gene")["importance"].abs()
+    return df.set_index("gene")["importance"]
 
 
 def summarize_fcnn(exp_dir: Path) -> dict[str, pd.Series]:
@@ -39,24 +39,28 @@ def summarize_fcnn(exp_dir: Path) -> dict[str, pd.Series]:
             continue
         df = pd.read_csv(files[0])
         gene_cols = [c for c in df.columns if c not in {"sample_id", "label", "prediction"}]
-        summary[method] = df[gene_cols].abs().sum(0)
+        summary[method] = df[gene_cols].sum(0)
     return summary
 
 
-def summarize_binn(exp_dir: Path) -> dict[str, pd.Series]:
-    summary: dict[str, pd.Series] = {}
+def summarize_binn(exp_dir: Path) -> tuple[dict[str, pd.Series], dict[str, pd.Series]]:
+    mean_summary: dict[str, pd.Series] = {}
+    abs_summary: dict[str, pd.Series] = {}
     exp_root = exp_dir / "results" / "explanations" / "PNET"
     for method in METHODS:
         layer_files = sorted(exp_root.glob(f"PNet_*_{method}_L*_layer0_test.csv"))
         if not layer_files:
             continue
-        gene_imps = []
+        raw_imps = []
+        abs_imps = []
         for fp in layer_files:
             df = pd.read_csv(fp)
             gene_cols = [c for c in df.columns if c not in {"sample_id", "label", "prediction"}]
-            gene_imps.append(df[gene_cols].abs().sum(0))
-        summary[method] = pd.concat(gene_imps, axis=1).mean(axis=1)
-    return summary
+            raw_imps.append(df[gene_cols].sum(0))
+            abs_imps.append(df[gene_cols].abs().sum(0))
+        mean_summary[method] = pd.concat(raw_imps, axis=1).mean(axis=1)
+        abs_summary[method] = pd.concat(abs_imps, axis=1).sum(axis=1)
+    return mean_summary, abs_summary
 
 
 def main() -> None:
@@ -87,13 +91,15 @@ def main() -> None:
 
     log_imp = log_imp.reindex(genes).fillna(0)
     fcnn_imp = summarize_fcnn(data_dir)
-    binn_imp = summarize_binn(data_dir)
+    binn_mean, binn_abs = summarize_binn(data_dir)
 
     df = pd.DataFrame({"gene": genes, "true_gene": truth.values, "logistic": log_imp.values})
     for method, series in fcnn_imp.items():
         df[f"fcnn_{method}"] = series.reindex(genes).fillna(0).values
-    for method, series in binn_imp.items():
-        df[f"binn_{method}"] = series.reindex(genes).fillna(0).values
+    for method, series in binn_mean.items():
+        df[f"binn_mean_{method}"] = series.reindex(genes).fillna(0).values
+    for method, series in binn_abs.items():
+        df[f"binn_abs_{method}"] = series.reindex(genes).fillna(0).values
     df.to_csv(out_dir / "gene_importance_summary.csv", index=False)
 
     import matplotlib.pyplot as plt
@@ -116,9 +122,12 @@ def main() -> None:
         if col in df.columns:
             save_scatter(col, col)
 
-    # BINN methods
+    # BINN methods (mean and absolute layer aggregation)
     for m in METHODS:
-        col = f"binn_{m}"
+        col = f"binn_mean_{m}"
+        if col in df.columns:
+            save_scatter(col, col)
+        col = f"binn_abs_{m}"
         if col in df.columns:
             save_scatter(col, col)
 
