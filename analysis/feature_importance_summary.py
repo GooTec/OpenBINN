@@ -19,7 +19,7 @@ import json
 import numpy as np
 import pandas as pd
 
-METHODS = ["itg", "ig", "gradshap", "deeplift", "shap"]
+METHODS = ["itg", "ig", "shap", "deeplift", "deepliftshap"]
 
 
 def summarize_logistic(exp_dir: Path) -> pd.Series:
@@ -97,17 +97,30 @@ def main() -> None:
     df.to_csv(out_dir / "gene_importance_summary.csv", index=False)
 
     import matplotlib.pyplot as plt
-    plt.figure(figsize=(6, 4))
-    plt.scatter(df["true_gene"], df["logistic"], label="logistic", alpha=0.7)
-    if "fcnn_deeplift" in df.columns:
-        plt.scatter(df["true_gene"], df["fcnn_deeplift"], label="fcnn_deeplift", alpha=0.7)
-    if "binn_deeplift" in df.columns:
-        plt.scatter(df["true_gene"], df["binn_deeplift"], label="binn_deeplift", alpha=0.7)
-    plt.xlabel("True important gene")
-    plt.ylabel("Estimated importance")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(out_dir / "gene_importance_scatter.png")
+
+    def save_scatter(col: str, label: str) -> None:
+        plt.figure(figsize=(6, 4))
+        plt.scatter(df["true_gene"], df[col], alpha=0.7)
+        plt.xlabel("True important gene")
+        plt.ylabel("Estimated importance")
+        plt.title(label)
+        plt.tight_layout()
+        plt.savefig(out_dir / f"{label}_scatter.png")
+
+    # logistic regression
+    save_scatter("logistic", "logistic")
+
+    # FCNN methods
+    for m in METHODS:
+        col = f"fcnn_{m}"
+        if col in df.columns:
+            save_scatter(col, col)
+
+    # BINN methods
+    for m in METHODS:
+        col = f"binn_{m}"
+        if col in df.columns:
+            save_scatter(col, col)
 
 
 if __name__ == "__main__":

@@ -30,8 +30,9 @@ from openbinn.explainer import Explainer
 import openbinn.experiment_utils as utils
 
 # ──────────────────────────────────────────
-# 계산할 설명 기법 목록. shap은 DeepLiftShap을 의미한다.
-METHODS       = ["itg", "ig", "gradshap", "deeplift", "shap"]
+# 계산할 설명 기법 목록. ``shap`` 은 DeepLiftShap,
+# ``deepliftshap`` 은 동일한 기법을 다른 이름으로 저장한다.
+METHODS       = ["itg", "ig", "shap", "deeplift", "deepliftshap"]
 # gradient-based methods listed here do not require a baseline tensor
 NO_BASELINE_METHODS = {"itg", "sg", "grad", "gradshap", "lrp", "lime", "control", "feature_ablation"}
 N_SIM         = 100
@@ -126,9 +127,10 @@ def explain_dataset(scen_dir: Path, reactome):
     data_label   = scen_dir.name        # ex) 1, 37, 5 …
     split_name   = "test"
 
-    methods = [m for m in METHODS if m in config['explainers']]
+    methods = [m for m in METHODS if (m == "deepliftshap" and "shap" in config['explainers']) or m in config['explainers']]
     print(f"Methods to compute: {', '.join(methods)}")
     for METHOD in methods:
+        base_method = "shap" if METHOD == "deepliftshap" else METHOD
         # ───────────────── layer loop ──────────────────
         for tgt in range(1, len(maps)+1):
             print(f"Explaining {METHOD} for target layer {tgt} ...")
@@ -137,14 +139,14 @@ def explain_dataset(scen_dir: Path, reactome):
             expl_acc, lab_acc, pred_acc, id_acc = {}, [], [], []
             for X, y, ids in test_loader:
                 X = X.float(); y = y.long()
-                p_conf = utils.fill_param_dict(METHOD, config['explainers'][METHOD], X)
+                p_conf = utils.fill_param_dict(base_method, config['explainers'][base_method], X)
                 p_conf['classification_type'] = 'binary'
 
                 # only add baseline when required by the explanation method
-                if METHOD not in NO_BASELINE_METHODS:
+                if base_method not in NO_BASELINE_METHODS:
                     p_conf['baseline'] = torch.zeros_like(X)
 
-                explainer = Explainer(METHOD, wrap, p_conf)
+                explainer = Explainer(base_method, wrap, p_conf)
                 exp_dict  = explainer.get_layer_explanations(X, y)
 
                 for lname, ten in exp_dict.items():

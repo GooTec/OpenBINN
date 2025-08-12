@@ -25,7 +25,7 @@ from openbinn.explainer import Explainer
 import openbinn.experiment_utils as utils
 from openbinn.binn.data import PnetSimDataSet, ReactomeNetwork, get_layer_maps
 
-METHODS = ["itg", "ig", "gradshap", "deeplift", "shap"]
+METHODS = ["itg", "ig", "shap", "deeplift", "deepliftshap"]
 NO_BASELINE_METHODS = {"itg", "sg", "grad", "gradshap", "lrp", "lime", "control", "feature_ablation"}
 SEED = 42
 
@@ -108,13 +108,14 @@ def main():
     config = utils.load_config(str(ROOT / "configs/experiment_config.json"))
     data_label = data_dir.name
 
-    methods = [m for m in METHODS if m in config['explainers']]
+    methods = [m for m in METHODS if (m == "deepliftshap" and "shap" in config['explainers']) or m in config['explainers']]
     for method in methods:
-        p_conf = utils.fill_param_dict(method, config['explainers'][method], x_te)
+        base_method = "shap" if method == "deepliftshap" else method
+        p_conf = utils.fill_param_dict(base_method, config['explainers'][base_method], x_te)
         p_conf['classification_type'] = 'binary'
-        if method not in NO_BASELINE_METHODS:
+        if base_method not in NO_BASELINE_METHODS:
             p_conf['baseline'] = torch.zeros_like(x_te)
-        explainer = Explainer(method, model, p_conf)
+        explainer = Explainer(base_method, model, p_conf)
         imp = explainer.get_explanations(x_te, y_te).detach().cpu().numpy()
         imp = imp.reshape(len(ds.test_idx), n_genes, n_feat).sum(axis=2)
         df = pd.DataFrame(imp, columns=list(ds.node_index))
