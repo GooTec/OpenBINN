@@ -17,8 +17,8 @@ conda activate openBINN
 which python              # 경로 확인(디버그용)
 
 # 4) 경로 설정
-ROOT_DIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
-cd "$ROOT_DIR"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
 
 # 5) 실행
 beta=2.0
@@ -29,14 +29,14 @@ data_dir="data/experiment1/b${beta}_g${gamma}/${rep}"
 results_dir="results/experiment1/b${beta}_g${gamma}/${rep}"
 mkdir -p "$results_dir"
 
-python analysis/experiment1.py
-python analysis/logistic_experiment1.py --beta "$beta" --gamma "$gamma" --rep "$rep"
-python analysis/fnn_experiment1.py --beta "$beta" --gamma "$gamma" --rep "$rep"
+python experiment1.py
+python logistic_experiment1.py --beta "$beta" --gamma "$gamma" --rep "$rep"
+python fnn_experiment1.py --beta "$beta" --gamma "$gamma" --rep "$rep"
 
 # create symlinks so importance calculation can locate data and trained model
 ln -sfn "data/experiment1/b${beta}_g${gamma}" "data/b${beta}_g${gamma}"
 ln -sfn "$(readlink -f "$results_dir")" "$data_dir/results"
 
 # compute BINN explanations and summarize per-gene importances
-python analysis/importance_calculation.py --start_sim "$rep" --end_sim "$rep" --beta "$beta" --gamma "$gamma"
-python analysis/feature_importance_summary.py --data-dir "$data_dir" --out-dir "$results_dir/importance_summary"
+python importance_calculation.py --start_sim "$rep" --end_sim "$rep" --beta "$beta" --gamma "$gamma"
+python feature_importance_summary.py --data-dir "$data_dir" --out-dir "$results_dir/importance_summary"
