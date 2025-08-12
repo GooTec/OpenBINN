@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """Train a logistic regression on simulation data and save per-gene betas.
 
-The coefficients are written to ``explanations/logistic_beta.csv`` so that
-``feature_importance_summary.py`` can aggregate them alongside FCNN and BINN
-explanations.
+The coefficients are written to ``results/explanations/Logistic/logistic_beta.csv``
+so that ``feature_importance_summary.py`` can aggregate them alongside FCNN and
+PNET explanations.
 """
 from __future__ import annotations
 
@@ -76,8 +76,8 @@ def main():
     n_feat = ds.x.shape[2]
     beta = np.abs(model.coef_[0]).reshape(n_genes, n_feat).sum(axis=1)
 
-    exp_dir = data_dir / "explanations"
-    exp_dir.mkdir(exist_ok=True)
+    exp_dir = data_dir / "results" / "explanations" / "Logistic"
+    exp_dir.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame({"gene": ds.node_index, "importance": beta})
     df.to_csv(exp_dir / "logistic_beta.csv", index=False)
     print("Saved logistic betas to", exp_dir / "logistic_beta.csv")

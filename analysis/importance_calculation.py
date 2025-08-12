@@ -120,7 +120,8 @@ def explain_dataset(scen_dir: Path, reactome):
     )
 
     config       = utils.load_config("../configs/experiment_config.json")
-    explain_root = scen_dir / "explanations"; explain_root.mkdir(exist_ok=True)
+    explain_root = scen_dir / "results" / "explanations" / "PNET"
+    explain_root.mkdir(parents=True, exist_ok=True)
     model_name   = "PNet"
     data_label   = scen_dir.name        # ex) 1, 37, 5 …
     split_name   = "test"

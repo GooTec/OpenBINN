@@ -22,7 +22,7 @@ METHODS = ["itg", "ig", "gradshap", "deeplift", "shap"]
 
 
 def summarize_logistic(exp_dir: Path) -> pd.Series:
-    fp = exp_dir / "explanations" / "logistic_beta.csv"
+    fp = exp_dir / "results" / "explanations" / "Logistic" / "logistic_beta.csv"
     if not fp.exists():
         raise FileNotFoundError(fp)
     df = pd.read_csv(fp)
@@ -31,7 +31,7 @@ def summarize_logistic(exp_dir: Path) -> pd.Series:
 
 def summarize_fcnn(exp_dir: Path) -> dict[str, pd.Series]:
     summary: dict[str, pd.Series] = {}
-    exp_root = exp_dir / "explanations"
+    exp_root = exp_dir / "results" / "explanations" / "FCNN"
     for method in METHODS:
         files = sorted(exp_root.glob(f"FCNN_*_{method}_L1_layer0_test.csv"))
         if not files:
@@ -44,7 +44,7 @@ def summarize_fcnn(exp_dir: Path) -> dict[str, pd.Series]:
 
 def summarize_binn(exp_dir: Path) -> dict[str, pd.Series]:
     summary: dict[str, pd.Series] = {}
-    exp_root = exp_dir / "explanations"
+    exp_root = exp_dir / "results" / "explanations" / "PNET"
     for method in METHODS:
         layer_files = sorted(exp_root.glob(f"PNet_*_{method}_L*_layer0_test.csv"))
         if not layer_files:

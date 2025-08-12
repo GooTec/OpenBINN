@@ -2,8 +2,8 @@
 """Train a fully connected neural network and save per-sample explanations.
 
 Explanations for each attribution method are written to
-``explanations/FCNN_*_{method}_L1_layer0_test.csv`` matching the layout of
-BINN explanations so they can be summarized together.
+``results/explanations/FCNN/FCNN_*_{method}_L1_layer0_test.csv`` matching the
+layout of BINN explanations so they can be summarized together.
 """
 from __future__ import annotations
 
@@ -103,8 +103,8 @@ def main():
 
     n_genes = len(ds.node_index)
     n_feat = ds.x.shape[2]
-    explain_root = data_dir / "explanations"
-    explain_root.mkdir(exist_ok=True)
+    explain_root = data_dir / "results" / "explanations" / "FCNN"
+    explain_root.mkdir(parents=True, exist_ok=True)
     config = utils.load_config(str(ROOT / "configs/experiment_config.json"))
     data_label = data_dir.name
 
