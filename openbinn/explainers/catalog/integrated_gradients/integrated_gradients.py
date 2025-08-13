@@ -83,20 +83,27 @@ class IntegratedGradients(BaseExplainer):
                     continue
 
             lig = LayerIntegratedGradients(self.model, layer)
-            if self.classification_type == "binary":
-                attr = lig.attribute(
-                    inputs.float(),
-                    baselines=baseline,
-                    target=0,
-                    n_steps=self.n_steps,
-                )
-            else:
-                attr = lig.attribute(
-                    inputs.float(),
-                    baselines=baseline,
-                    target=label,
-                    n_steps=self.n_steps,
-                )
+            try:
+                if self.classification_type == "binary":
+                    attr = lig.attribute(
+                        inputs.float(),
+                        baselines=baseline,
+                        target=0,
+                        n_steps=self.n_steps,
+                    )
+                else:
+                    attr = lig.attribute(
+                        inputs.float(),
+                        baselines=baseline,
+                        target=label,
+                        n_steps=self.n_steps,
+                    )
+            except RuntimeError as err:
+                # Some modules may not participate in the forward pass.
+                # Skip them instead of failing attribution generation.
+                if "differentiated Tensors" in str(err):
+                    continue
+                raise
             explanations[name] = attr
 
         return explanations
