@@ -30,7 +30,11 @@ from openbinn.explainer import Explainer
 import openbinn.experiment_utils as utils
 
 # ──────────────────────────────────────────
-METHOD        = "deeplift"   # ← ig, lime, shap 등으로 변경 가능
+# 계산할 설명 기법 목록. ``shap`` 은 DeepLiftShap,
+# ``deepliftshap`` 은 동일한 기법을 다른 이름으로 저장한다.
+METHODS       = ["ig", "shap", "deeplift", "deepliftshap"]
+# gradient-based methods listed here do not require a baseline tensor
+NO_BASELINE_METHODS = {"sg", "grad", "gradshap", "lrp", "lime", "control", "feature_ablation"}
 N_SIM         = 100
 N_VARIANTS    = 100
 DEFAULT_BETA  = 2
@@ -117,53 +121,60 @@ def explain_dataset(scen_dir: Path, reactome):
     )
 
     config       = utils.load_config("../configs/experiment_config.json")
-    explain_root = scen_dir / "explanations"; explain_root.mkdir(exist_ok=True)
+    explain_root = scen_dir / "results" / "explanations" / "PNET"
+    explain_root.mkdir(parents=True, exist_ok=True)
     model_name   = "PNet"
     data_label   = scen_dir.name        # ex) 1, 37, 5 …
     split_name   = "test"
 
-    # ───────────────── layer loop ──────────────────
-    for tgt in range(1, len(maps)+1):
-        wrap = ModelWrapper(model, tgt)
+    methods = [m for m in METHODS if (m == "deepliftshap" and "shap" in config['explainers']) or m in config['explainers']]
+    print(f"Methods to compute: {', '.join(methods)}")
+    for METHOD in methods:
+        base_method = "shap" if METHOD == "deepliftshap" else METHOD
+        # ───────────────── layer loop ──────────────────
+        for tgt in range(1, len(maps)+1):
+            print(f"Explaining {METHOD} for target layer {tgt} ...")
+            wrap = ModelWrapper(model, tgt)
 
-        expl_acc, lab_acc, pred_acc, id_acc = {}, [], [], []
-        for X, y, ids in test_loader:
-            X = X.float(); y = y.long()
-            p_conf = utils.fill_param_dict(METHOD, config['explainers'][METHOD], X)
-            p_conf['classification_type'] = 'binary'
+            expl_acc, lab_acc, pred_acc, id_acc = {}, [], [], []
+            for X, y, ids in test_loader:
+                X = X.float(); y = y.long()
+                p_conf = utils.fill_param_dict(base_method, config['explainers'][base_method], X)
+                p_conf['classification_type'] = 'binary'
 
-            # gradient-based methods do not require a baseline tensor
-            if METHOD not in {'itg', 'sg', 'grad', 'lrp', 'lime', 'control', 'feature_ablation'}:
-                p_conf['baseline'] = torch.zeros_like(X)
+                # only add baseline when required by the explanation method
+                if base_method not in NO_BASELINE_METHODS:
+                    p_conf['baseline'] = torch.zeros_like(X)
 
-            explainer = Explainer(METHOD, wrap, p_conf)
-            exp_dict  = explainer.get_layer_explanations(X, y)
+                explainer = Explainer(base_method, wrap, p_conf)
+                exp_dict  = explainer.get_layer_explanations(X, y)
 
-            for lname, ten in exp_dict.items():
-                expl_acc.setdefault(lname, []).append(ten.detach().cpu().numpy())
-            lab_acc.append(y.cpu().numpy())
-            pred_acc.append(wrap(X).detach().cpu().numpy())
-            ids_list = ids.tolist() if torch.is_tensor(ids) else list(ids)
-            id_acc.append([str(i) for i in ids_list])
+                for lname, ten in exp_dict.items():
+                    expl_acc.setdefault(lname, []).append(ten.detach().cpu().numpy())
+                lab_acc.append(y.cpu().numpy())
+                pred_acc.append(wrap(X).detach().cpu().numpy())
+                ids_list = ids.tolist() if torch.is_tensor(ids) else list(ids)
+                id_acc.append([str(i) for i in ids_list])
 
-        # ─ save per-layer CSV ───────────
-        for idx, (lname, arrs) in enumerate(expl_acc.items()):
-            if idx >= len(maps): break
-            expl_arr = np.concatenate(arrs, axis=0)
-            labels   = np.concatenate(lab_acc,  axis=0)
-            preds    = np.concatenate(pred_acc, axis=0)
-            all_ids  = [sid for batch in id_acc for sid in batch]
+            # ─ save per-layer CSV ───────────
+            for idx, (lname, arrs) in enumerate(expl_acc.items()):
+                if idx >= len(maps): break
+                expl_arr = np.concatenate(arrs, axis=0)
+                labels   = np.concatenate(lab_acc,  axis=0)
+                preds    = np.concatenate(pred_acc, axis=0)
+                all_ids  = [sid for batch in id_acc for sid in batch]
 
-            cur_map = maps[idx]; W = expl_arr.shape[1]
-            cols = list(cur_map.index) if cur_map.shape[0]==W else list(cur_map.columns)
+                cur_map = maps[idx]; W = expl_arr.shape[1]
+                cols = list(cur_map.index) if cur_map.shape[0]==W else list(cur_map.columns)
 
-            df = pd.DataFrame(expl_arr, columns=cols)
-            df.insert(0, 'sample_id', all_ids)
-            df['label']      = labels
-            df['prediction'] = preds
+                df = pd.DataFrame(expl_arr, columns=cols)
+                df.insert(0, 'sample_id', all_ids)
+                df['label']      = labels
+                df['prediction'] = preds
 
-            csv_fp = explain_root / f"{model_name}_{data_label}_{METHOD}_L{tgt}_layer{idx}_{split_name}.csv"
-            df.to_csv(csv_fp, index=False)
+                csv_fp = explain_root / f"{model_name}_{data_label}_{METHOD}_L{tgt}_layer{idx}_{split_name}.csv"
+                df.to_csv(csv_fp, index=False)
+        print(f"Saved raw importances for {METHOD}")
 
     print("    ✓ raw per-sample importance saved")
 

@@ -16,14 +16,28 @@ set -euxo pipefail        # 이제부터 unbound 변수 검사
 conda activate openBINN
 which python              # 경로 확인(디버그용)
 
-# 4) 실행
+# 4) 경로 설정: sbatch 제출 디렉토리를 기준으로 작업 경로 지정
+WORKDIR="${SLURM_SUBMIT_DIR:-$(pwd)}"
+cd "$WORKDIR"
+# 스크립트를 루트에서 제출한 경우 analysis 하위로 이동
+if [[ ! -f run_slurm_experiment1.sh && -d analysis ]]; then
+    cd analysis
+fi
+
+# 5) 실행
 beta=2.0
 gamma=2.0
 rep=1
 
-data_dir=./data/experiment1/b${beta}_g${gamma}/${rep}
-results_dir=./results/experiment1/b${beta}_g${gamma}/${rep}
+data_dir="data/experiment1/b${beta}_g${gamma}/${rep}"
+results_dir="results/experiment1/b${beta}_g${gamma}/${rep}"
+mkdir -p "$results_dir"
+
+# ensure model scripts write explanations to the unified results directory
+ln -sfn "$(readlink -f "$results_dir")" "$data_dir/results"
 
 python experiment1.py
-python model_comparison.py --data-dir "$data_dir" --output-dir "$results_dir/comparison"
+python logistic_experiment1.py --beta "$beta" --gamma "$gamma" --rep "$rep"
+python fnn_experiment1.py --beta "$beta" --gamma "$gamma" --rep "$rep"
 
+python feature_importance_summary.py --data-dir "$data_dir" --out-dir "$results_dir/importance_summary"
