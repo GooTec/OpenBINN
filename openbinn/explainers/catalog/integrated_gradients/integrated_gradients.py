@@ -63,24 +63,21 @@ class IntegratedGradients(BaseExplainer):
 
     def get_layer_explanations(self, inputs: torch.Tensor, label=None):
         target_layer = getattr(self.model, "print_layer", 0)
-
         self.model.eval()
         self.model.zero_grad()
-
         label = self._infer_label(inputs, label)
         baseline = self._get_baseline(inputs)
-
         explanations = {}
 
-        for name, layer in self.model.named_modules():
-            if not hasattr(layer, "weight") and not hasattr(layer, "bias"):
-                continue
-            if "intermediate" in name:
-                continue
-            if target_layer < 7 and "network" in name and int(name.split(".")[-2]) >= target_layer:
-                continue
+        # === DeepLIFT에서 가져온 안정적인 레이어 선택 방식으로 교체 ===
+        core_model = getattr(self.model, "model", self.model)
+        network = getattr(core_model, "network", None)
+        # target_layer 이전의 레이어만 선택
+        layers_to_explain = list(network[:target_layer]) if network is not None else []
 
+        for idx, layer in enumerate(layers_to_explain):
             lig = LayerIntegratedGradients(self.model, layer)
+            
             if self.classification_type == "binary":
                 attr = lig.attribute(
                     inputs.float(),
@@ -95,6 +92,7 @@ class IntegratedGradients(BaseExplainer):
                     target=label,
                     n_steps=self.n_steps,
                 )
-            explanations[name] = attr
+            # 이름을 인덱스 기반으로 저장하여 일관성 유지
+            explanations[f"layer_{idx}"] = attr
 
         return explanations

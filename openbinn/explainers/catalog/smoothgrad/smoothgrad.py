@@ -67,16 +67,18 @@ class SmoothGrad(BaseExplainer):
         label = self._infer_label(inputs, label)
 
         explanations = {}
-        for name, layer in self.model.named_modules():
-            if not hasattr(layer, "weight") and not hasattr(layer, "bias"):
-                continue
-            if "intermediate" in name:
-                continue
-            if target_layer < 7 and "network" in name and int(name.split(".")[-2]) >= target_layer:
-                continue
 
+        # === 안정적인 레이어 선택 방식으로 교체 ===
+        core_model = getattr(self.model, "model", self.model)
+        network = getattr(core_model, "network", None)
+        # target_layer 이전의 레이어만 선택
+        layers_to_explain = list(network[:target_layer]) if network is not None else []
+
+        for idx, layer in enumerate(layers_to_explain):
+            # 기본 설명자를 먼저 정의하고 NoiseTunnel로 감쌉니다.
             base = LayerGradientXActivation(self.model, layer)
             nt = NoiseTunnel(base)
+            
             if self.classification_type == "binary":
                 attr = nt.attribute(
                     inputs.float(),
@@ -93,6 +95,8 @@ class SmoothGrad(BaseExplainer):
                     n_samples=self.n_samples,
                     target=label,
                 )
-            explanations[name] = attr
+            
+            # 일관성을 위해 인덱스 기반으로 이름을 저장합니다.
+            explanations[f"layer_{idx}"] = attr
 
         return explanations

@@ -54,7 +54,7 @@ class DeepLiftShapExplainer(BaseExplainer):
             attr = dl_shap.attribute(x.float(), baselines=baseline, target=label)
 
         return attr
-
+    
     def get_layer_explanations(self, inputs: torch.Tensor, label=None):
         target_layer = getattr(self.model, "print_layer", 0)
 
@@ -65,19 +65,23 @@ class DeepLiftShapExplainer(BaseExplainer):
         baseline = self._get_baseline(inputs)
 
         explanations = {}
-        for name, layer in self.model.named_modules():
-            if not hasattr(layer, "weight") and not hasattr(layer, "bias"):
-                continue
-            if "intermediate" in name:
-                continue
-            if target_layer < 7 and "network" in name and int(name.split(".")[-2]) >= target_layer:
-                continue
 
+        # === 안정적인 레이어 선택 방식으로 교체 ===
+        core_model = getattr(self.model, "model", self.model)
+        network = getattr(core_model, "network", None)
+        # target_layer 이전의 레이어만 선택
+        layers_to_explain = list(network[:target_layer]) if network is not None else []
+
+        for idx, layer in enumerate(layers_to_explain):
+            # Captum의 LayerDeepLiftShap을 사용합니다.
             ldls = LayerDeepLiftShap(self.model, layer, multiply_by_inputs=self.multiply_by_inputs)
+            
             if self.classification_type == "binary":
                 attr = ldls.attribute(inputs.float(), baselines=baseline, target=0)
             else:
                 attr = ldls.attribute(inputs.float(), baselines=baseline, target=label)
-            explanations[name] = attr
+            
+            # 일관성을 위해 인덱스 기반으로 이름을 저장합니다.
+            explanations[f"layer_{idx}"] = attr
 
         return explanations
