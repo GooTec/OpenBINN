@@ -9,15 +9,18 @@ elif (cwd.parent / "openbinn").exists():
     sys.path.insert(0, str(cwd.parent))
 
 import argparse
+import csv
 import json
 
 import numpy as np
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, Subset
+import pytorch_lightning as pl
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 
+from openbinn.binn import PNet
 from openbinn.binn.data import PnetSimDataSet, ReactomeNetwork, get_layer_maps
 
 
@@ -47,7 +50,7 @@ def load_dataset(data_dir: Path):
     ds.align_with_map(maps[0].index)
     x = ds.x.reshape(len(ds.y), -1).numpy()
     y = ds.y.numpy().ravel()
-    return ds, x, y
+    return ds, x, y, maps
 
 
 def train_logistic(x_train, y_train):
@@ -77,6 +80,30 @@ def train_fnn(x_train, y_train, hidden_dim=128, epochs=50, batch_size=32, lr=1e-
     return model
 
 
+def train_pnet(ds, maps, epochs=50, batch_size=32, lr=1e-3):
+    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=lr)
+    tr_loader = DataLoader(Subset(ds, ds.train_idx), batch_size=batch_size, shuffle=True)
+    va_loader = DataLoader(Subset(ds, ds.valid_idx), batch_size=batch_size)
+    trainer = pl.Trainer(max_epochs=epochs, enable_progress_bar=False, logger=False, enable_checkpointing=False)
+    trainer.fit(model, tr_loader, va_loader)
+    return model
+
+
+def evaluate_auc_pnet(model, ds, indices, batch_size=32):
+    loader = DataLoader(Subset(ds, indices), batch_size=batch_size)
+    all_probs, all_true = [], []
+    model.eval()
+    with torch.no_grad():
+        for xb, yb in loader:
+            logits = model(xb)[-1].squeeze(-1)
+            probs = torch.sigmoid(logits)
+            all_probs.append(probs.cpu())
+            all_true.append(yb.view(-1).cpu())
+    probs = torch.cat(all_probs).numpy()
+    y_true = torch.cat(all_true).numpy()
+    return roc_auc_score(y_true, probs)
+
+
 def evaluate_auc(model, x, y, is_torch=False):
     if is_torch:
         with torch.no_grad():
@@ -99,7 +126,7 @@ def main(args):
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    ds, x, y = load_dataset(Path(args.data_dir))
+    ds, x, y, maps = load_dataset(Path(args.data_dir))
     tr_idx, va_idx, te_idx = ds.train_idx, ds.valid_idx, ds.test_idx
     x_tr, y_tr = x[tr_idx], y[tr_idx]
     x_va, y_va = x[va_idx], y[va_idx]
@@ -127,9 +154,31 @@ def main(args):
     with open(out_dir / "fnn_metrics.json", "w") as f:
         json.dump(fnn_res, f, indent=2)
 
+    # PNet model
+    pnet_model = train_pnet(ds, maps, epochs=args.epochs, batch_size=args.batch_size, lr=args.lr)
+    pnet_res = {
+        "train_auc": evaluate_auc_pnet(pnet_model, ds, tr_idx, batch_size=args.batch_size),
+        "val_auc": evaluate_auc_pnet(pnet_model, ds, va_idx, batch_size=args.batch_size),
+        "test_auc": evaluate_auc_pnet(pnet_model, ds, te_idx, batch_size=args.batch_size),
+    }
+    save_params(pnet_model, out_dir, "pnet", is_torch=True)
+    with open(out_dir / "pnet_metrics.json", "w") as f:
+        json.dump(pnet_res, f, indent=2)
+
+    # Aggregate results
+    rows = [
+        {"model": "logistic_regression", **log_res},
+        {"model": "fcnn", **fnn_res},
+        {"model": "pnet", **pnet_res},
+    ]
+    with open(out_dir / "model_auc.csv", "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["model", "train_auc", "val_auc", "test_auc"])
+        writer.writeheader()
+        writer.writerows(rows)
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Compare logistic regression and FCNN on simulation data")
+    parser = argparse.ArgumentParser(description="Compare logistic regression, FCNN, and PNet on simulation data")
     parser.add_argument("--data-dir", default="./data/prostate", help="Directory containing simulation dataset")
     parser.add_argument("--output-dir", default="experiment/comparison", help="Where to store results")
     parser.add_argument("--hidden-dim", type=int, default=128)
