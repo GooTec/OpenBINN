@@ -39,7 +39,8 @@ def summarize_fcnn(exp_dir: Path) -> dict[str, pd.Series]:
             continue
         df = pd.read_csv(files[0])
         gene_cols = [c for c in df.columns if c not in {"sample_id", "label", "prediction"}]
-        summary[method] = df[gene_cols].sum(0)
+        summary[method] = df[gene_cols].abs().sum(0)
+
     return summary
 
 
@@ -59,7 +60,7 @@ def summarize_binn(exp_dir: Path) -> dict[str, dict[int, pd.Series]]:
             layer_idx = int(match.group(1))
             df = pd.read_csv(fp)
             gene_cols = [c for c in df.columns if c not in {"sample_id", "label", "prediction"}]
-            per_layer[layer_idx] = df[gene_cols].sum(0)
+            per_layer[layer_idx] = df[gene_cols].abs().sum(0)
         summaries[method] = per_layer
     return summaries
 

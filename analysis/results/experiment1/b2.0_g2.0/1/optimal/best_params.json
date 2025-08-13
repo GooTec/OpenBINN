@@ -1,0 +1,1 @@
+{"learning_rate": 0.001, "batch_size": 32, "optimizer": "adam", "scheduler": "none", "norm_type": "batchnorm", "dropout_rate": 0.1, "loss_cfg": {"main": 1.0, "aux": 0.0}}
