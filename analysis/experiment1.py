@@ -167,14 +167,14 @@ def train_dataset(
     trainer = pl.Trainer(
         accelerator="auto",
         deterministic=True,
-        max_epochs=200,
+        max_epochs=1000,
         callbacks=[
             pl.callbacks.EarlyStopping(
                 args.monitor_metric,
                 patience=30,
                 mode="max" if args.monitor_metric == "val_auc" else "min",
                 verbose=False,
-                min_delta=0.01,
+                min_delta=0.0,
             ),
             callback,
             GradNormPrinter(),

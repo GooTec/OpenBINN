@@ -10,13 +10,13 @@ from __future__ import annotations
 from pathlib import Path
 import argparse
 import sys
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import json
-import numpy as np
 import pandas as pd
 
 METHODS = ["ig", "shap", "deeplift", "deepliftshap"]
@@ -40,27 +40,29 @@ def summarize_fcnn(exp_dir: Path) -> dict[str, pd.Series]:
         df = pd.read_csv(files[0])
         gene_cols = [c for c in df.columns if c not in {"sample_id", "label", "prediction"}]
         summary[method] = df[gene_cols].sum(0)
+
     return summary
 
 
-def summarize_binn(exp_dir: Path) -> tuple[dict[str, pd.Series], dict[str, pd.Series]]:
-    mean_summary: dict[str, pd.Series] = {}
-    abs_summary: dict[str, pd.Series] = {}
+def summarize_binn(exp_dir: Path) -> dict[str, dict[int, pd.Series]]:
+    """Collect gene importances for each PNET output layer individually."""
+    summaries: dict[str, dict[int, pd.Series]] = {}
     exp_root = exp_dir / "results" / "explanations" / "PNET"
     for method in METHODS:
         layer_files = sorted(exp_root.glob(f"PNet_*_{method}_L*_layer0_test.csv"))
         if not layer_files:
             continue
-        raw_imps = []
-        abs_imps = []
+        per_layer: dict[int, pd.Series] = {}
         for fp in layer_files:
+            match = re.search(r"_L(\d+)_", fp.name)
+            if not match:
+                continue
+            layer_idx = int(match.group(1))
             df = pd.read_csv(fp)
             gene_cols = [c for c in df.columns if c not in {"sample_id", "label", "prediction"}]
-            raw_imps.append(df[gene_cols].sum(0))
-            abs_imps.append(df[gene_cols].abs().sum(0))
-        mean_summary[method] = pd.concat(raw_imps, axis=1).mean(axis=1)
-        abs_summary[method] = pd.concat(abs_imps, axis=1).sum(axis=1)
-    return mean_summary, abs_summary
+            per_layer[layer_idx] = df[gene_cols].sum(0)
+        summaries[method] = per_layer
+    return summaries
 
 
 def main() -> None:
@@ -91,15 +93,14 @@ def main() -> None:
 
     log_imp = log_imp.reindex(genes).fillna(0)
     fcnn_imp = summarize_fcnn(data_dir)
-    binn_mean, binn_abs = summarize_binn(data_dir)
+    binn_imp = summarize_binn(data_dir)
 
     df = pd.DataFrame({"gene": genes, "true_gene": truth.values, "logistic": log_imp.values})
     for method, series in fcnn_imp.items():
         df[f"fcnn_{method}"] = series.reindex(genes).fillna(0).values
-    for method, series in binn_mean.items():
-        df[f"binn_mean_{method}"] = series.reindex(genes).fillna(0).values
-    for method, series in binn_abs.items():
-        df[f"binn_abs_{method}"] = series.reindex(genes).fillna(0).values
+    for method, layer_dict in binn_imp.items():
+        for layer, series in layer_dict.items():
+            df[f"binn_{method}_L{layer}"] = series.reindex(genes).fillna(0).values
     df.to_csv(out_dir / "gene_importance_summary.csv", index=False)
 
     import matplotlib.pyplot as plt
@@ -122,14 +123,13 @@ def main() -> None:
         if col in df.columns:
             save_scatter(col, col)
 
-    # BINN methods (mean and absolute layer aggregation)
+    # PNET methods per output layer
     for m in METHODS:
-        col = f"binn_mean_{m}"
-        if col in df.columns:
-            save_scatter(col, col)
-        col = f"binn_abs_{m}"
-        if col in df.columns:
-            save_scatter(col, col)
+        layer_dict = binn_imp.get(m, {})
+        for layer in sorted(layer_dict):
+            col = f"binn_{m}_L{layer}"
+            if col in df.columns:
+                save_scatter(col, col)
 
 
 if __name__ == "__main__":
