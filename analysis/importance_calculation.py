@@ -24,10 +24,11 @@ import pandas as pd
 from torch.utils.data.sampler import SubsetRandomSampler
 from torch_geometric.loader import DataLoader
 
-from openbinn.binn import PNet
+from openbinn.binn import PNet, PNetNoResidual
 from openbinn.binn.data import PnetSimExpDataSet, ReactomeNetwork, get_layer_maps
 from openbinn.explainer import Explainer
 import openbinn.experiment_utils as utils
+from experiment1_constants import PNET_MODEL_FILENAME, PNET_NORES_MODEL_FILENAME
 
 # ──────────────────────────────────────────
 # 계산할 설명 기법 목록. ``shap`` 은 DeepLiftShap,
@@ -56,12 +57,23 @@ SEED          = 42
 class ModelWrapper(torch.nn.Module):
     def __init__(self, model: PNet, target_layer: int):
         super().__init__()
-        self.model        = model
-        self.print_layer  = target_layer
+        self.model = model
+        self.print_layer = target_layer
         self.target_layer = target_layer
+
     def forward(self, x):
         outs = self.model(x)
         return outs[self.target_layer - 1]
+
+
+class ModelWrapperNoRes(torch.nn.Module):
+    def __init__(self, model: PNetNoResidual):
+        super().__init__()
+        self.model = model
+        self.print_layer = len(model.network)
+
+    def forward(self, x):
+        return self.model(x)[0]
 
 
 def connectivity_corrected_scores(df: pd.DataFrame) -> pd.DataFrame:
@@ -87,7 +99,7 @@ def load_reactome_once():
 
 def explain_dataset(scen_dir: Path, reactome):
     """단일 폴더 (original/variant) 에 대한 모든 중요도 계산."""
-    model_fp = scen_dir / "results" / "optimal" / "trained_model.pth"
+    model_fp = scen_dir / "results" / "optimal" / PNET_MODEL_FILENAME
     split_dir = scen_dir / "splits"
     if not model_fp.exists() or not split_dir.exists():
         print(f"[skip] model 또는 splits 없음 → {_rel_to_data(scen_dir)}")
@@ -179,6 +191,90 @@ def explain_dataset(scen_dir: Path, reactome):
     print("    ✓ raw per-sample importance saved")
 
 
+def explain_dataset_nores(scen_dir: Path, reactome):
+    """Compute importances for PNet without residual connections."""
+    model_fp = scen_dir / "results" / "optimal" / PNET_NORES_MODEL_FILENAME
+    split_dir = scen_dir / "splits"
+    if not model_fp.exists() or not split_dir.exists():
+        print(f"[skip] model 또는 splits 없음 → {_rel_to_data(scen_dir)}")
+        return
+
+    ds = PnetSimExpDataSet(root=str(scen_dir), num_features=1)
+    ds.split_index_by_file(
+        train_fp=split_dir/"training_set_0.csv",
+        valid_fp=split_dir/"validation_set.csv",
+        test_fp =split_dir/"test_set.csv",
+    )
+
+    maps = get_layer_maps(
+        genes=list(ds.node_index), reactome=reactome,
+        n_levels=3, direction="root_to_leaf", add_unk_genes=False
+    )
+    ds.node_index = [g for g in ds.node_index if g in maps[0].index]
+
+    model = PNetNoResidual(layers=maps, num_genes=maps[0].shape[0], lr=0.001)
+    state = torch.load(model_fp, map_location="cpu")
+    model.load_state_dict(state); model.eval()
+
+    torch.manual_seed(SEED)
+    test_loader = DataLoader(
+        ds, batch_size=len(ds.test_idx),
+        sampler=SubsetRandomSampler(ds.test_idx),
+        num_workers=NUM_WORKERS
+    )
+
+    config       = utils.load_config("../configs/experiment_config.json")
+    explain_root = scen_dir / "results" / "explanations" / "PNETNoRes"
+    explain_root.mkdir(parents=True, exist_ok=True)
+    model_name   = "PNetNoRes"
+    data_label   = scen_dir.name
+    split_name   = "test"
+
+    methods = [m for m in METHODS if (m == "deepliftshap" and "shap" in config['explainers']) or m in config['explainers']]
+    print(f"Methods to compute: {', '.join(methods)}")
+    wrap = ModelWrapperNoRes(model)
+    for METHOD in methods:
+        base_method = "shap" if METHOD == "deepliftshap" else METHOD
+        expl_acc, lab_acc, pred_acc, id_acc = {}, [], [], []
+        for X, y, ids in test_loader:
+            X = X.float(); y = y.long()
+            p_conf = utils.fill_param_dict(base_method, config['explainers'][base_method], X)
+            p_conf['classification_type'] = 'binary'
+            if base_method not in NO_BASELINE_METHODS:
+                p_conf['baseline'] = torch.zeros_like(X)
+
+            explainer = Explainer(base_method, wrap, p_conf)
+            exp_dict  = explainer.get_layer_explanations(X, y)
+
+            for lname, ten in exp_dict.items():
+                expl_acc.setdefault(lname, []).append(ten.detach().cpu().numpy())
+            lab_acc.append(y.cpu().numpy())
+            pred_acc.append(wrap(X).detach().cpu().numpy())
+            ids_list = ids.tolist() if torch.is_tensor(ids) else list(ids)
+            id_acc.append([str(i) for i in ids_list])
+
+        for idx, (lname, arrs) in enumerate(expl_acc.items()):
+            if idx >= len(maps): break
+            expl_arr = np.concatenate(arrs, axis=0)
+            labels   = np.concatenate(lab_acc,  axis=0)
+            preds    = np.concatenate(pred_acc, axis=0)
+            all_ids  = [sid for batch in id_acc for sid in batch]
+
+            cur_map = maps[idx]; W = expl_arr.shape[1]
+            cols = list(cur_map.index) if cur_map.shape[0]==W else list(cur_map.columns)
+
+            df = pd.DataFrame(expl_arr, columns=cols)
+            df.insert(0, 'sample_id', all_ids)
+            df['label']      = labels
+            df['prediction'] = preds
+
+            csv_fp = explain_root / f"{model_name}_{data_label}_{METHOD}_L{idx+1}_layer{idx}_{split_name}.csv"
+            df.to_csv(csv_fp, index=False)
+        print(f"Saved raw importances for {METHOD}")
+
+    print("    ✓ raw per-sample importance saved")
+
+
 # ╭────────────────────────────────────────────────────────────╮
 # │                           main                            │
 # ╰────────────────────────────────────────────────────────────╯
@@ -201,6 +297,12 @@ def main():
         action="store_true",
         help="Do not calculate importances for original datasets",
     )
+    ap.add_argument(
+        "--model",
+        choices=["pnet", "pnet-nores"],
+        default="pnet",
+        help="Model type to explain",
+    )
     args = ap.parse_args()
 
     data_root = Path(f"./data/b{args.beta}_g{args.gamma}")
@@ -212,18 +314,20 @@ def main():
     else:
         variants = [args.statistical_method]
 
+    explain_func = explain_dataset_nores if args.model == "pnet-nores" else explain_dataset
+
     for i in range(args.start_sim, args.end_sim + 1):
         base = data_root / f"{i}"
         print(f"\n■■ Simulation {i:3d} ■■")
         if not args.skip_original:
-            explain_dataset(base, reactome)  # original
+            explain_func(base, reactome)
 
         for vtype in variants:
             for b in range(1, N_VARIANTS + 1):
                 vdir = base / vtype / f"{b}"
                 if vdir.exists():
                     print(f"  → {vtype}/{b}")
-                    explain_dataset(vdir, reactome)
+                    explain_func(vdir, reactome)
 
     print("\n✓ 모든 중요도 계산 완료.")
 

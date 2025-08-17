@@ -65,6 +65,27 @@ def summarize_binn(exp_dir: Path) -> dict[str, dict[int, pd.Series]]:
     return summaries
 
 
+def summarize_binn_nores(exp_dir: Path) -> dict[str, dict[int, pd.Series]]:
+    """Collect gene importances for each layer of PNet without residual connections."""
+    summaries: dict[str, dict[int, pd.Series]] = {}
+    exp_root = exp_dir / "results" / "explanations" / "PNETNoRes"
+    for method in METHODS:
+        layer_files = sorted(exp_root.glob(f"PNetNoRes_*_{method}_L*_layer*_test.csv"))
+        if not layer_files:
+            continue
+        per_layer: dict[int, pd.Series] = {}
+        for fp in layer_files:
+            match = re.search(r"_L(\d+)_", fp.name)
+            if not match:
+                continue
+            layer_idx = int(match.group(1))
+            df = pd.read_csv(fp)
+            gene_cols = [c for c in df.columns if c not in {"sample_id", "label", "prediction"}]
+            per_layer[layer_idx] = df[gene_cols].sum(0)
+        summaries[method] = per_layer
+    return summaries
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Summarize gene importances")
     ap.add_argument("--data-dir", required=True, help="Simulation data directory")
@@ -94,6 +115,7 @@ def main() -> None:
     log_imp = log_imp.reindex(genes).fillna(0)
     fcnn_imp = summarize_fcnn(data_dir)
     binn_imp = summarize_binn(data_dir)
+    binn_nores_imp = summarize_binn_nores(data_dir)
 
     df = pd.DataFrame({"gene": genes, "true_gene": truth.values, "logistic": log_imp.values})
     for method, series in fcnn_imp.items():
@@ -101,6 +123,9 @@ def main() -> None:
     for method, layer_dict in binn_imp.items():
         for layer, series in layer_dict.items():
             df[f"binn_{method}_L{layer}"] = series.reindex(genes).fillna(0).values
+    for method, layer_dict in binn_nores_imp.items():
+        for layer, series in layer_dict.items():
+            df[f"binn_nores_{method}_L{layer}"] = series.reindex(genes).fillna(0).values
     df.to_csv(out_dir / "gene_importance_summary.csv", index=False)
 
     import matplotlib.pyplot as plt
@@ -128,6 +153,14 @@ def main() -> None:
         layer_dict = binn_imp.get(m, {})
         for layer in sorted(layer_dict):
             col = f"binn_{m}_L{layer}"
+            if col in df.columns:
+                save_scatter(col, col)
+
+    # PNET-no-residual methods per layer
+    for m in METHODS:
+        layer_dict = binn_nores_imp.get(m, {})
+        for layer in sorted(layer_dict):
+            col = f"binn_nores_{m}_L{layer}"
             if col in df.columns:
                 save_scatter(col, col)
 
