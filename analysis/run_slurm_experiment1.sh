@@ -41,3 +41,4 @@ python logistic_experiment1.py --beta "$beta" --gamma "$gamma" --rep "$rep"
 python fnn_experiment1.py --beta "$beta" --gamma "$gamma" --rep "$rep"
 
 python feature_importance_summary.py --data-dir "$data_dir" --out-dir "$results_dir/importance_summary"
+python model_comparison.py --data-dir "$data_dir" --output-dir "$results_dir/model_comparison"
