@@ -11,6 +11,13 @@ from pathlib import Path
 import argparse
 import sys
 
+from experiment1_constants import (
+    RESULTS_DIR,
+    OPTIMAL_DIR,
+    EXPLANATIONS_DIR,
+    LOGISTIC_MODEL_FILENAME,
+)
+
 # ensure repository root is on sys.path so ``openbinn`` can be imported when
 # executing this script from within the ``analysis`` directory
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,15 +82,15 @@ def main():
     model = train_logistic(x_tr, y_tr)
 
     # save trained model for later evaluation/comparison
-    opt_dir = data_dir / "results" / "optimal"
+    opt_dir = data_dir / RESULTS_DIR / OPTIMAL_DIR
     opt_dir.mkdir(parents=True, exist_ok=True)
-    joblib.dump(model, opt_dir / "logistic_model.joblib")
+    joblib.dump(model, opt_dir / LOGISTIC_MODEL_FILENAME)
 
     n_genes = len(ds.node_index)
     n_feat = ds.x.shape[2]
     beta = model.coef_[0].reshape(n_genes, n_feat).sum(axis=1)
 
-    exp_dir = data_dir / "results" / "explanations" / "Logistic"
+    exp_dir = data_dir / RESULTS_DIR / EXPLANATIONS_DIR / "Logistic"
     exp_dir.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame({"gene": ds.node_index, "importance": beta})
     df.to_csv(exp_dir / "logistic_beta.csv", index=False)

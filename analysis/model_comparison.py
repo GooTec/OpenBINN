@@ -22,6 +22,17 @@ import joblib
 from openbinn.binn import PNet
 from openbinn.binn.data import PnetSimDataSet, ReactomeNetwork, get_layer_maps
 
+from experiment1_constants import (
+    RESULTS_DIR,
+    OPTIMAL_DIR,
+    LOGISTIC_MODEL_FILENAME,
+    FCNN_MODEL_FILENAME,
+    PNET_MODEL_FILENAME,
+    PNET_CONFIG_FILENAME,
+    FCNN_HIDDEN_DIM,
+    DEFAULT_BATCH_SIZE,
+)
+
 
 def load_dataset(data_dir: Path):
     """Load simulation dataset and align feature order with pathway maps."""
@@ -53,18 +64,18 @@ def load_dataset(data_dir: Path):
 
 
 def load_logistic(model_dir: Path):
-    fp = model_dir / "logistic_model.joblib"
+    fp = model_dir / LOGISTIC_MODEL_FILENAME
     if not fp.exists():
         raise FileNotFoundError(fp)
     return joblib.load(fp)
 
 
 def load_fnn(model_dir: Path, input_dim: int):
-    fp = model_dir / "fcnn_model.pth"
+    fp = model_dir / FCNN_MODEL_FILENAME
     if not fp.exists():
         raise FileNotFoundError(fp)
     ckpt = torch.load(fp, map_location="cpu")
-    hidden_dim = ckpt.get("hidden_dim", 128)
+    hidden_dim = ckpt.get("hidden_dim", FCNN_HIDDEN_DIM)
     model = nn.Sequential(
         nn.Linear(input_dim, hidden_dim),
         nn.ReLU(),
@@ -76,10 +87,12 @@ def load_fnn(model_dir: Path, input_dim: int):
 
 
 def load_pnet(model_dir: Path, maps):
-    ckpt_fp = model_dir / "trained_model.pth"
-    cfg_fp = model_dir / "best_params.json"
-    if not ckpt_fp.exists() or not cfg_fp.exists():
-        raise FileNotFoundError("Missing PNet trained model or config")
+    ckpt_fp = model_dir / PNET_MODEL_FILENAME
+    cfg_fp = model_dir / PNET_CONFIG_FILENAME
+    if not ckpt_fp.exists():
+        raise FileNotFoundError(f"Missing PNet trained model checkpoint: {ckpt_fp}")
+    if not cfg_fp.exists():
+        raise FileNotFoundError(f"Missing PNet config file: {cfg_fp}")
     with open(cfg_fp) as f:
         cfg = json.load(f)
     optim_cfg = {
@@ -107,7 +120,7 @@ def load_pnet(model_dir: Path, maps):
     return model, cfg
 
 
-def evaluate_auc_pnet(model, ds, indices, batch_size=32):
+def evaluate_auc_pnet(model, ds, indices, batch_size=DEFAULT_BATCH_SIZE):
     loader = DataLoader(Subset(ds, indices), batch_size=batch_size)
     all_probs, all_true = [], []
     model.eval()
@@ -150,7 +163,7 @@ def main(args):
     x_va, y_va = x[va_idx], y[va_idx]
     x_te, y_te = x[te_idx], y[te_idx]
 
-    model_dir = Path(args.data_dir) / "results" / "optimal"
+    model_dir = Path(args.data_dir) / RESULTS_DIR / OPTIMAL_DIR
 
     # Logistic regression
     log_model = load_logistic(model_dir)
@@ -176,7 +189,7 @@ def main(args):
 
     # PNet model
     pnet_model, pnet_cfg = load_pnet(model_dir, maps)
-    batch_size = pnet_cfg.get("batch_size", 32)
+    batch_size = pnet_cfg.get("batch_size", DEFAULT_BATCH_SIZE)
     pnet_res = {
         "train_auc": evaluate_auc_pnet(pnet_model, ds, tr_idx, batch_size=batch_size),
         "val_auc": evaluate_auc_pnet(pnet_model, ds, va_idx, batch_size=batch_size),
