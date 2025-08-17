@@ -11,6 +11,14 @@ from pathlib import Path
 import argparse
 import sys
 
+from experiment1_constants import (
+    RESULTS_DIR,
+    OPTIMAL_DIR,
+    EXPLANATIONS_DIR,
+    FCNN_MODEL_FILENAME,
+    FCNN_HIDDEN_DIM,
+)
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -58,7 +66,7 @@ def load_dataset(data_dir: Path):
     return ds, x, y
 
 
-def train_fnn(x_train, y_train, hidden_dim=128, epochs=50, batch_size=32, lr=1e-3):
+def train_fnn(x_train, y_train, hidden_dim=FCNN_HIDDEN_DIM, epochs=50, batch_size=32, lr=1e-3):
     torch.manual_seed(SEED)
     input_dim = x_train.shape[1]
     model = nn.Sequential(
@@ -94,8 +102,14 @@ def main():
     ds, x, y = load_dataset(data_dir)
     x_tr, y_tr = x[ds.train_idx], y[ds.train_idx]
 
-    model = train_fnn(x_tr, y_tr)
+    hidden_dim = FCNN_HIDDEN_DIM
+    model = train_fnn(x_tr, y_tr, hidden_dim=hidden_dim)
     model.eval()
+
+    # save trained model for later evaluation/comparison
+    opt_dir = data_dir / RESULTS_DIR / OPTIMAL_DIR
+    opt_dir.mkdir(parents=True, exist_ok=True)
+    torch.save({"state_dict": model.state_dict(), "hidden_dim": hidden_dim}, opt_dir / FCNN_MODEL_FILENAME)
 
     x_te = torch.from_numpy(x[ds.test_idx]).float()
     y_te = torch.from_numpy(y[ds.test_idx]).long()
@@ -103,7 +117,7 @@ def main():
 
     n_genes = len(ds.node_index)
     n_feat = ds.x.shape[2]
-    explain_root = data_dir / "results" / "explanations" / "FCNN"
+    explain_root = data_dir / RESULTS_DIR / EXPLANATIONS_DIR / "FCNN"
     explain_root.mkdir(parents=True, exist_ok=True)
     config = utils.load_config(str(ROOT / "configs/experiment_config.json"))
     data_label = data_dir.name
