@@ -15,10 +15,9 @@ import json
 import numpy as np
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, TensorDataset, Subset
-import pytorch_lightning as pl
-from sklearn.linear_model import LogisticRegression
+from torch.utils.data import DataLoader, Subset
 from sklearn.metrics import roc_auc_score
+import joblib
 
 from openbinn.binn import PNet
 from openbinn.binn.data import PnetSimDataSet, ReactomeNetwork, get_layer_maps
@@ -53,40 +52,59 @@ def load_dataset(data_dir: Path):
     return ds, x, y, maps
 
 
-def train_logistic(x_train, y_train):
-    model = LogisticRegression(penalty="l1", solver="liblinear", max_iter=1000)
-    model.fit(x_train, y_train)
-    return model
+def load_logistic(model_dir: Path):
+    fp = model_dir / "logistic_model.joblib"
+    if not fp.exists():
+        raise FileNotFoundError(fp)
+    return joblib.load(fp)
 
 
-def train_fnn(x_train, y_train, hidden_dim=128, epochs=50, batch_size=32, lr=1e-3):
-    input_dim = x_train.shape[1]
+def load_fnn(model_dir: Path, input_dim: int):
+    fp = model_dir / "fcnn_model.pth"
+    if not fp.exists():
+        raise FileNotFoundError(fp)
+    ckpt = torch.load(fp, map_location="cpu")
+    hidden_dim = ckpt.get("hidden_dim", 128)
     model = nn.Sequential(
         nn.Linear(input_dim, hidden_dim),
         nn.ReLU(),
         nn.Linear(hidden_dim, 1),
     )
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.BCEWithLogitsLoss()
-    dataset = TensorDataset(torch.from_numpy(x_train).float(), torch.from_numpy(y_train).float())
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-    for _ in range(epochs):
-        for xb, yb in loader:
-            optimizer.zero_grad()
-            logits = model(xb).squeeze(-1)
-            loss = criterion(logits, yb.reshape_as(logits))
-            loss.backward()
-            optimizer.step()
+    model.load_state_dict(ckpt["state_dict"])
+    model.eval()
     return model
 
 
-def train_pnet(ds, maps, epochs=50, batch_size=32, lr=1e-3):
-    model = PNet(layers=maps, num_genes=maps[0].shape[0], lr=lr)
-    tr_loader = DataLoader(Subset(ds, ds.train_idx), batch_size=batch_size, shuffle=True)
-    va_loader = DataLoader(Subset(ds, ds.valid_idx), batch_size=batch_size)
-    trainer = pl.Trainer(max_epochs=epochs, enable_progress_bar=False, logger=False, enable_checkpointing=False)
-    trainer.fit(model, tr_loader, va_loader)
-    return model
+def load_pnet(model_dir: Path, maps):
+    ckpt_fp = model_dir / "trained_model.pth"
+    cfg_fp = model_dir / "best_params.json"
+    if not ckpt_fp.exists() or not cfg_fp.exists():
+        raise FileNotFoundError("Missing PNet trained model or config")
+    with open(cfg_fp) as f:
+        cfg = json.load(f)
+    optim_cfg = {
+        "opt": cfg.get("optimizer", "adam"),
+        "lr": cfg.get("learning_rate", 1e-3),
+        "wd": cfg.get("weight_decay", 0.0),
+        "scheduler": cfg.get("scheduler", "none"),
+        "monitor": "val_auc",
+    }
+    model = PNet(
+        layers=maps,
+        num_genes=maps[0].shape[0],
+        lr=cfg.get("learning_rate", 1e-3),
+        norm_type=cfg.get("norm_type", "batchnorm"),
+        dropout_rate=cfg.get("dropout_rate", 0.1),
+        input_dropout=cfg.get("input_dropout", 0.0),
+        loss_cfg=cfg.get("loss_cfg", {"main": 1.0, "aux": 0.0}),
+        optim_cfg=optim_cfg,
+    )
+    state = torch.load(ckpt_fp, map_location="cpu")
+    if isinstance(state, dict) and "state_dict" in state:
+        state = state["state_dict"]
+    model.load_state_dict(state)
+    model.eval()
+    return model, cfg
 
 
 def evaluate_auc_pnet(model, ds, indices, batch_size=32):
@@ -132,8 +150,10 @@ def main(args):
     x_va, y_va = x[va_idx], y[va_idx]
     x_te, y_te = x[te_idx], y[te_idx]
 
+    model_dir = Path(args.data_dir) / "results" / "optimal"
+
     # Logistic regression
-    log_model = train_logistic(x_tr, y_tr)
+    log_model = load_logistic(model_dir)
     log_res = {
         "train_auc": evaluate_auc(log_model, x_tr, y_tr),
         "val_auc": evaluate_auc(log_model, x_va, y_va),
@@ -144,7 +164,7 @@ def main(args):
         json.dump(log_res, f, indent=2)
 
     # Fully connected NN
-    fnn_model = train_fnn(x_tr, y_tr, hidden_dim=args.hidden_dim, epochs=args.epochs, batch_size=args.batch_size, lr=args.lr)
+    fnn_model = load_fnn(model_dir, x.shape[1])
     fnn_res = {
         "train_auc": evaluate_auc(fnn_model, x_tr, y_tr, is_torch=True),
         "val_auc": evaluate_auc(fnn_model, x_va, y_va, is_torch=True),
@@ -155,11 +175,12 @@ def main(args):
         json.dump(fnn_res, f, indent=2)
 
     # PNet model
-    pnet_model = train_pnet(ds, maps, epochs=args.epochs, batch_size=args.batch_size, lr=args.lr)
+    pnet_model, pnet_cfg = load_pnet(model_dir, maps)
+    batch_size = pnet_cfg.get("batch_size", 32)
     pnet_res = {
-        "train_auc": evaluate_auc_pnet(pnet_model, ds, tr_idx, batch_size=args.batch_size),
-        "val_auc": evaluate_auc_pnet(pnet_model, ds, va_idx, batch_size=args.batch_size),
-        "test_auc": evaluate_auc_pnet(pnet_model, ds, te_idx, batch_size=args.batch_size),
+        "train_auc": evaluate_auc_pnet(pnet_model, ds, tr_idx, batch_size=batch_size),
+        "val_auc": evaluate_auc_pnet(pnet_model, ds, va_idx, batch_size=batch_size),
+        "test_auc": evaluate_auc_pnet(pnet_model, ds, te_idx, batch_size=batch_size),
     }
     save_params(pnet_model, out_dir, "pnet", is_torch=True)
     with open(out_dir / "pnet_metrics.json", "w") as f:
@@ -181,9 +202,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compare logistic regression, FCNN, and PNet on simulation data")
     parser.add_argument("--data-dir", default="./data/prostate", help="Directory containing simulation dataset")
     parser.add_argument("--output-dir", default="experiment/comparison", help="Where to store results")
-    parser.add_argument("--hidden-dim", type=int, default=128)
-    parser.add_argument("--epochs", type=int, default=50)
-    parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--lr", type=float, default=1e-3)
     args = parser.parse_args()
     main(args)

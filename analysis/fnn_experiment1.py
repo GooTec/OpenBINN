@@ -94,8 +94,14 @@ def main():
     ds, x, y = load_dataset(data_dir)
     x_tr, y_tr = x[ds.train_idx], y[ds.train_idx]
 
-    model = train_fnn(x_tr, y_tr)
+    hidden_dim = 128
+    model = train_fnn(x_tr, y_tr, hidden_dim=hidden_dim)
     model.eval()
+
+    # save trained model for later evaluation/comparison
+    opt_dir = data_dir / "results" / "optimal"
+    opt_dir.mkdir(parents=True, exist_ok=True)
+    torch.save({"state_dict": model.state_dict(), "hidden_dim": hidden_dim}, opt_dir / "fcnn_model.pth")
 
     x_te = torch.from_numpy(x[ds.test_idx]).float()
     y_te = torch.from_numpy(y[ds.test_idx]).long()

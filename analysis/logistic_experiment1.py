@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
+import joblib
 
 from openbinn.binn.data import PnetSimDataSet, ReactomeNetwork, get_layer_maps
 
@@ -72,6 +73,12 @@ def main():
     x_tr, y_tr = x[ds.train_idx], y[ds.train_idx]
 
     model = train_logistic(x_tr, y_tr)
+
+    # save trained model for later evaluation/comparison
+    opt_dir = data_dir / "results" / "optimal"
+    opt_dir.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, opt_dir / "logistic_model.joblib")
+
     n_genes = len(ds.node_index)
     n_feat = ds.x.shape[2]
     beta = model.coef_[0].reshape(n_genes, n_feat).sum(axis=1)
