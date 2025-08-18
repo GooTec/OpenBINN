@@ -70,7 +70,10 @@ class ModelWrapperNoRes(torch.nn.Module):
     def __init__(self, model: PNetNoResidual):
         super().__init__()
         self.model = model
-        self.print_layer = len(model.network)
+        # Only capture layers that have a biological mapping. The final
+        # classifier layer does not correspond to any pathway map and should
+        # be excluded from attribution to avoid creating a spurious "L4".
+        self.print_layer = len(model.network) - 1
 
     def forward(self, x):
         return self.model(x)[0]
