@@ -1,4 +1,4 @@
-from .pnet import PNet
+from .pnet import PNet, PNetNoResidual
 from .base_net import BaseNet
 from .data import (
     PnetSimDataSet,
