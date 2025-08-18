@@ -50,10 +50,10 @@ class ModelWrapper(torch.nn.Module):
     def __init__(self, model: PNetNoResidual):
         super().__init__()
         self.model = model
-        # Captum uses `print_layer` to determine how many intermediate
-        # activations to capture. We set it to the total number of network
-        # layers so that explanations are produced for each of them.
-        self.print_layer = len(model.network)
+        # Captum uses `print_layer` to decide how many layers to capture.
+        # The final linear layer produces the logit and does not correspond
+        # to a biological mapping, so we exclude it from attribution.
+        self.print_layer = len(model.network) - 1
 
     def forward(self, x):
         # The model returns a single-element list with final logits.
@@ -291,6 +291,11 @@ def explain_dataset(data_dir: Path, results_dir: Path, reactome, maps, args=None
             id_acc.append(ids)
 
         for idx, (lname, arrs) in enumerate(expl_acc.items()):
+            if idx >= len(maps):
+                # Extra layers (e.g., final classifier) have no biological mapping
+                # and are skipped to avoid indexing errors.
+                break
+
             arr = np.concatenate(arrs, axis=0)
             labels = np.concatenate(lab_acc, axis=0)
             preds = np.concatenate(pred_acc, axis=0)
