@@ -19,7 +19,7 @@ from torch.utils.data import DataLoader, Subset
 from sklearn.metrics import roc_auc_score
 import joblib
 
-from openbinn.binn import PNet
+from openbinn.binn import PNet, PNetNoResidual
 from openbinn.binn.data import PnetSimDataSet, ReactomeNetwork, get_layer_maps
 
 from experiment1_constants import (
@@ -29,6 +29,8 @@ from experiment1_constants import (
     FCNN_MODEL_FILENAME,
     PNET_MODEL_FILENAME,
     PNET_CONFIG_FILENAME,
+    PNET_NORES_MODEL_FILENAME,
+    PNET_NORES_CONFIG_FILENAME,
     FCNN_HIDDEN_DIM,
     DEFAULT_BATCH_SIZE,
 )
@@ -103,6 +105,40 @@ def load_pnet(model_dir: Path, maps):
         "monitor": "val_auc",
     }
     model = PNet(
+        layers=maps,
+        num_genes=maps[0].shape[0],
+        lr=cfg.get("learning_rate", 1e-3),
+        norm_type=cfg.get("norm_type", "batchnorm"),
+        dropout_rate=cfg.get("dropout_rate", 0.1),
+        input_dropout=cfg.get("input_dropout", 0.0),
+        loss_cfg=cfg.get("loss_cfg", {"main": 1.0, "aux": 0.0}),
+        optim_cfg=optim_cfg,
+    )
+    state = torch.load(ckpt_fp, map_location="cpu")
+    if isinstance(state, dict) and "state_dict" in state:
+        state = state["state_dict"]
+    model.load_state_dict(state)
+    model.eval()
+    return model, cfg
+
+
+def load_pnet_nores(model_dir: Path, maps):
+    ckpt_fp = model_dir / PNET_NORES_MODEL_FILENAME
+    cfg_fp = model_dir / PNET_NORES_CONFIG_FILENAME
+    if not ckpt_fp.exists():
+        raise FileNotFoundError(f"Missing PNetNoRes trained model checkpoint: {ckpt_fp}")
+    if not cfg_fp.exists():
+        raise FileNotFoundError(f"Missing PNetNoRes config file: {cfg_fp}")
+    with open(cfg_fp) as f:
+        cfg = json.load(f)
+    optim_cfg = {
+        "opt": cfg.get("optimizer", "adam"),
+        "lr": cfg.get("learning_rate", 1e-3),
+        "wd": cfg.get("weight_decay", 0.0),
+        "scheduler": cfg.get("scheduler", "none"),
+        "monitor": "val_auc",
+    }
+    model = PNetNoResidual(
         layers=maps,
         num_genes=maps[0].shape[0],
         lr=cfg.get("learning_rate", 1e-3),
@@ -199,11 +235,24 @@ def main(args):
     with open(out_dir / "pnet_metrics.json", "w") as f:
         json.dump(pnet_res, f, indent=2)
 
+    # PNet without residual connections
+    pnet_nores_model, pnet_nores_cfg = load_pnet_nores(model_dir, maps)
+    batch_size_nores = pnet_nores_cfg.get("batch_size", DEFAULT_BATCH_SIZE)
+    pnet_nores_res = {
+        "train_auc": evaluate_auc_pnet(pnet_nores_model, ds, tr_idx, batch_size=batch_size_nores),
+        "val_auc": evaluate_auc_pnet(pnet_nores_model, ds, va_idx, batch_size=batch_size_nores),
+        "test_auc": evaluate_auc_pnet(pnet_nores_model, ds, te_idx, batch_size=batch_size_nores),
+    }
+    save_params(pnet_nores_model, out_dir, "pnet_nores", is_torch=True)
+    with open(out_dir / "pnet_nores_metrics.json", "w") as f:
+        json.dump(pnet_nores_res, f, indent=2)
+
     # Aggregate results
     rows = [
         {"model": "logistic_regression", **log_res},
         {"model": "fcnn", **fnn_res},
         {"model": "pnet", **pnet_res},
+        {"model": "pnet_nores", **pnet_nores_res},
     ]
     with open(out_dir / "model_auc.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["model", "train_auc", "val_auc", "test_auc"])

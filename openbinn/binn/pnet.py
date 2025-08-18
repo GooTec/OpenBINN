@@ -254,3 +254,25 @@ class PNet(BaseNet):
         elif scheduler is not None:
             return [optimizer], [scheduler]
         return [optimizer], []
+
+
+class PNetNoResidual(PNet):
+    """PNet variant without residual connections from intermediate layers.
+
+    This network mirrors the architecture of :class:`PNet` but disables
+    intermediate classification heads. Only the final layer produces a logit,
+    which allows explanations to be computed like a standard fully-connected
+    network.
+    """
+
+    def __init__(self, *args, **kwargs):
+        """Initialize the model with ``intermediate_outputs`` disabled."""
+        kwargs.setdefault("intermediate_outputs", False)
+        super().__init__(*args, **kwargs)
+
+    def forward(self, x):
+        """Forward pass returning a single-element list with final logits."""
+        x = self.network[0](x)
+        for layer in self.network[1:]:
+            x = layer(x)
+        return [x]

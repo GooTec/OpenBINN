@@ -37,6 +37,7 @@ mkdir -p "$results_dir"
 ln -sfn "$(readlink -f "$results_dir")" "$data_dir/results"
 
 python experiment1.py
+python experiment1_PNETwoResNet.py
 python logistic_experiment1.py --beta "$beta" --gamma "$gamma" --rep "$rep"
 python fnn_experiment1.py --beta "$beta" --gamma "$gamma" --rep "$rep"
 

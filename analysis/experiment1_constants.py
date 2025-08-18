@@ -14,6 +14,8 @@ LOGISTIC_MODEL_FILENAME = "logistic_model.joblib"
 FCNN_MODEL_FILENAME = "fcnn_model.pth"
 PNET_MODEL_FILENAME = "trained_model.pth"
 PNET_CONFIG_FILENAME = "best_params.json"
+PNET_NORES_MODEL_FILENAME = "trained_model_nores.pth"
+PNET_NORES_CONFIG_FILENAME = "best_params_nores.json"
 
 # Hyperparameters
 FCNN_HIDDEN_DIM = 128
